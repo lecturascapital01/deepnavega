@@ -1,0 +1,651 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Gestión de Órdenes de Trabajo - Energía</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
+
+:root {
+  --bg: #0b0d13; --surface: #141824; --surface2: #1e2436;
+  --border: rgba(255,255,255,0.08); --accent: #4fd8a4;
+  --accent-blue: #3dbfe8; --google-maps: #4285f4;
+  --status-pending: #3b82f6; --status-progress: #f59e0b; --status-done: #22c55e;
+  --status-rejected: #6b7280; --status-absent: #ef4444;
+  --text: #e2e8f0; --text-muted: #94a3b8;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; font-family: 'DM Mono', monospace; }
+body, html { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+
+.app-container { display: flex; flex-direction: column; height: 100%; position: relative; }
+
+header {
+  background: var(--surface); padding: 8px 15px; display: flex; 
+  align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); 
+  z-index: 1100; backdrop-filter: blur(10px);
+}
+.title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800; color: var(--accent); }
+.file-input-wrapper { position: relative; overflow: hidden; display: inline-block; }
+.btn-file { 
+  background: var(--surface2); border: 1px solid var(--accent); padding: 8px 16px; 
+  border-radius: 8px; font-size: 12px; color: var(--accent); cursor: pointer; font-weight: 600;
+}
+.file-input-wrapper input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
+
+#map-container { flex: 1; position: relative; }
+#map { width: 100%; height: 100%; }
+
+.map-loader {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 44px; height: 44px; border: 4px solid rgba(255,255,255,0.08);
+  border-left-color: var(--accent); border-radius: 50%;
+  animation: spin 1s linear infinite; z-index: 850; display: block;
+}
+@keyframes spin { 100% { transform: translate(-50%, -50%) rotate(360deg); } }
+
+/* HUD flotante */
+#hud-panel {
+  position: absolute; top: 12px; left: 12px; right: 12px; z-index: 950;
+  background: rgba(20, 24, 36, 0.92); backdrop-filter: blur(14px);
+  border: 1px solid var(--border); border-radius: 14px;
+  padding: 12px 14px; display: none; flex-direction: column; gap: 8px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+}
+.hud-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.badge-priority { 
+  padding: 3px 8px; border-radius: 6px; font-size: 10px; font-weight: bold; text-transform: uppercase; 
+  background: rgba(255,255,255,0.1);
+}
+.priority-Alta { background: rgba(239,68,68,0.2); color: #ef4444; }
+.priority-Media { background: rgba(245,158,11,0.2); color: #f59e0b; }
+.priority-Baja { background: rgba(59,130,246,0.2); color: #3b82f6; }
+
+.info-main { font-size: 17px; font-weight: bold; color: var(--text); line-height: 1.2; }
+.distance-txt { font-family: 'Syne', sans-serif; font-size: 26px; font-weight: 800; color: var(--accent-blue); flex-shrink: 0; }
+.info-sub { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+.status-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 10px; font-weight: bold;
+  text-transform: uppercase; margin-left: 6px;
+}
+.status-Pendiente { background: var(--status-pending); color: white; }
+.status-EnProgreso { background: var(--status-progress); color: black; }
+.status-Completada { background: var(--status-done); color: black; }
+.status-Rechazada { background: var(--status-rejected); color: white; }
+
+.button-group-nav { display: flex; gap: 8px; width: 100%; }
+.btn-ext-nav {
+  flex: 1; padding: 14px; border: none; border-radius: 10px; font-size: 14px;
+  font-weight: bold; color: #ffffff; cursor: pointer; display: flex; align-items: center;
+  justify-content: center; gap: 6px; text-transform: uppercase;
+}
+.btn-gmaps { background: var(--google-maps); }
+
+.btn-actions {
+  display: flex; gap: 8px; width: 100%;
+}
+.btn-ir, .btn-complete, .btn-reject, .btn-undo {
+  flex: 1; padding: 12px 5px; border: none; border-radius: 8px; font-size: 11px;
+  font-weight: bold; cursor: pointer; text-transform: uppercase; display: flex; align-items: center;
+  justify-content: center; gap: 4px;
+}
+.btn-ir { background: var(--google-maps); color: white; }      /* azul Google Maps */
+.btn-complete { background: var(--status-done); color: black; }
+.btn-reject { background: var(--status-rejected); color: white; }
+.btn-undo { background: #f97316; color: white; }
+
+.btn-gps-lock {
+  position: absolute; bottom: 24px; right: 16px; z-index: 960;
+  width: 52px; height: 52px; background: var(--surface2); border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer; font-size: 22px;
+}
+
+#calculating-indicator {
+  position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.7); color: var(--accent); padding: 6px 16px;
+  border-radius: 20px; font-size: 11px; display: none; z-index: 960;
+}
+
+.leaflet-popup-content-wrapper { 
+  background: var(--surface) !important; color: var(--text) !important; 
+  border: 1px solid var(--border); border-radius: 12px;
+}
+.leaflet-popup-tip { background: var(--surface) !important; }
+.popup-nav-title { font-weight: bold; color: var(--accent); margin-bottom: 4px; font-size: 14px; }
+.popup-nav-text { font-size: 11px; color: var(--text-muted); margin-bottom: 10px; line-height: 1.4; }
+.popup-btn-row { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+.popup-btn { 
+  padding: 8px 10px; font-size: 11px; text-transform: uppercase; font-weight: bold; 
+  border-radius: 6px; border: none; color: white; text-align: center; flex: 1; cursor: pointer; 
+}
+
+#empty-state {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; background: rgba(11,13,19,0.94);
+  z-index: 999; padding: 30px; text-align: center;
+}
+#empty-state p { color: var(--text-muted); font-size: 12px; margin-top: 10px; line-height: 1.6; }
+
+.pulse-user {
+  background: #3b82f6; border: 2.5px solid white; border-radius: 50%;
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); animation: pulse 1.8s infinite;
+}
+@keyframes pulse {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
+</style>
+</head>
+<body>
+<div class="app-container">
+  <header>
+    <div class="title">⚡ OT Energía</div>
+    <div class="file-input-wrapper">
+      <button class="btn-file">📂 Cargar OT</button>
+      <input type="file" id="file-loader" accept=".gpx,.txt,.csv,.xls,.xlsx">
+    </div>
+  </header>
+
+  <div id="map-container">
+    <div id="map"></div>
+    <div id="map-spinner" class="map-loader"></div>
+    
+    <div id="hud-panel">
+      <div class="hud-header">
+        <div>
+          <span class="badge-priority" id="lbl-priority">Media</span>
+          <span class="status-badge status-Pendiente" id="lbl-status">Pendiente</span>
+          <div class="info-main" id="lbl-ot">OT: -</div>
+        </div>
+        <div class="distance-txt" id="lbl-distance">--</div>
+      </div>
+      <div class="info-sub" id="lbl-detalles">Sin dirección</div>
+      <div class="info-sub" id="lbl-tipo-tarea" style="font-weight:bold;"></div>
+      
+      <div class="btn-actions" id="btn-actions-container"></div>
+    </div>
+
+    <button class="btn-gps-lock" onclick="centerOnUser()" title="Mi ubicación">📍</button>
+    <div id="calculating-indicator">⏳ Buscando mejor ruta...</div>
+    
+    <div id="empty-state">
+      <div style="font-size:36px;">🗺️</div>
+      <p>Cargá tu archivo con las Órdenes de Trabajo.<br>El sistema te guiará a la tarea más cercana usando la red vial.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+const GOOGLE_MAPS_API_KEY = ''; // Opcional
+const CANDIDATE_LIMIT = 20;
+
+let map, userLatLng = null, userMarker = null;
+let tasks = [];  
+let activeTaskIndex = -1;
+let markersGroup = null;
+let navigationLine = null;
+let currentRouteId = "";
+
+const distSq = (a, b) => (a.lat - b.lat)**2 + (a.lon - b.lon)**2;
+
+document.addEventListener("DOMContentLoaded", () => {
+  map = L.map('map', { 
+    zoomControl: false, 
+    center: [-28.4689, -65.7792], 
+    zoom: 15, 
+    preferCanvas: true 
+  });
+  
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    updateWhenIdle: true,
+    keepBuffer: 3
+  }).on('tileload', () => {
+    document.getElementById('map-spinner').style.display = 'none';
+  }).addTo(map);
+  
+  markersGroup = L.layerGroup().addTo(map);
+  setTimeout(initGPS, 500);
+});
+
+function initGPS() {
+  if (!navigator.geolocation) return;
+  navigator.geolocation.watchPosition(
+    pos => {
+      userLatLng = [pos.coords.latitude, pos.coords.longitude];
+      if (!userMarker) {
+        userMarker = L.marker(userLatLng, {
+          icon: L.divIcon({ className: 'pulse-user', iconSize: [16, 16], iconAnchor: [8, 8] }),
+          zIndexOffset: 1000
+        }).addTo(map);
+      } else {
+        userMarker.setLatLng(userLatLng);
+      }
+      if (tasks.length > 0) updateNavigation();
+    },
+    e => console.warn("GPS:", e.message),
+    { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
+  );
+}
+
+document.getElementById('file-loader').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  currentRouteId = "ot_progress_" + file.name.replace(/[^a-zA-Z0-9]/g, '_');
+  const ext = file.name.toLowerCase();
+  const reader = new FileReader();
+  
+  reader.onload = async function(evt) {
+    let rawTasks = [];
+    try {
+      if (ext.endsWith('.gpx')) rawTasks = parseGPX(evt.target.result);
+      else if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        rawTasks = parseMatrix(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" }));
+      } else {
+        const text = evt.target.result;
+        const lines = text.split(/\r?\n/).filter(l => l.trim());
+        const sep = ext.endsWith('.csv') || lines[0].includes(',') ? ',' : /\t/;
+        rawTasks = parseMatrix(lines.map(l => l.split(sep).map(c => c.trim())));
+      }
+    } catch (err) { alert("Error al procesar archivo."); return; }
+    
+    if (rawTasks.length) {
+      tasks = rawTasks;
+      loadProgress();
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('hud-panel').style.display = 'flex';
+      await findNextActiveTask();
+      fitMapToFeatures();
+    } else alert("No se encontraron tareas con coordenadas válidas.");
+  };
+  
+  reader[ext.endsWith('.xls') || ext.endsWith('.xlsx') ? 'readAsArrayBuffer' : 'readAsText'](file, 'ISO-8859-1');
+});
+
+function parseGPX(xmlText) {
+  const xml = new DOMParser().parseFromString(xmlText, "text/xml");
+  const wpts = xml.getElementsByTagName("wpt");
+  return Array.from(wpts).map((wpt, i) => {
+    const lat = +wpt.getAttribute("lat"), lon = +wpt.getAttribute("lon");
+    const name = wpt.getElementsByTagName("name")[0]?.textContent || `OT-${i+1}`;
+    const desc = wpt.getElementsByTagName("desc")[0]?.textContent || "";
+    const parts = desc.split('|').map(p => p.trim());
+    return {
+      lat, lon,
+      numeroOT: name,
+      suministro: parts[0]?.replace(/Sum:/i,'').trim() || 'S/S',
+      direccion: parts[1]?.replace(/Dir:/i,'').trim() || '',
+      tipoTarea: parts[2]?.replace(/Tipo:/i,'').trim() || 'Lectura',
+      prioridad: parts[3]?.replace(/Prio:/i,'').trim() || 'Media',
+      observaciones: parts[4]?.replace(/Obs:/i,'').trim() || '',
+      titular: '',
+      status: 'Pendiente'
+    };
+  }).filter(t => !isNaN(t.lat) && !isNaN(t.lon));
+}
+
+function convertGarmin(str) {
+  if (!str) return null;
+  const m = str.replace(/[°º?']/g,' ').match(/([NS])\s*(\d+)\s+([\d.]+)\s+([EW])\s*(\d+)\s+([\d.]+)/i);
+  if (!m) return null;
+  const lat = (+m[2] + +m[3]/60) * (m[1].toUpperCase()==='S'?-1:1);
+  const lon = (+m[5] + +m[6]/60) * (m[4].toUpperCase()==='W'?-1:1);
+  return isNaN(lat)||isNaN(lon) ? null : {lat, lon};
+}
+
+function parseMatrix(matrix) {
+  if (!matrix.length) return [];
+  const headerIdx = matrix.findIndex(r => r.some(c => /num|orden|ot|tarea|suministro/i.test(String(c))));
+  const headers = (headerIdx >= 0 ? matrix[headerIdx] : matrix[0]).map(h => String(h).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, ""));
+  
+  const idxOT = headers.findIndex(h => /num|orden|nro|ot/.test(h) && !/tipo|motivo/.test(h));
+  const idxTipo = headers.findIndex(h => /tipo|tarea/.test(h));
+  const idxPrio = headers.findIndex(h => /prioridad|prio/.test(h));
+  const idxSum = headers.findIndex(h => /sum|nis|medidor/.test(h));
+  const idxDir = headers.findIndex(h => /dir|domicilio|cons/.test(h));
+  const idxTit = headers.findIndex(h => /tit|nombre/.test(h));
+  const idxObs = headers.findIndex(h => /obs|notas/.test(h));
+  const idxGeo = headers.findIndex(h => /geo|coor|pos/.test(h));
+  const idxLat = headers.findIndex(h => /lat/.test(h) && !/lon/.test(h));
+  const idxLon = headers.findIndex(h => /lon|lng/.test(h));
+
+  const tasks = [];
+  for (let i = headerIdx + 1; i < matrix.length; i++) {
+    const cols = matrix[i].map(c => String(c).trim());
+    if (cols.length <= 1) continue;
+    let coords = null;
+    if (idxGeo >= 0 && cols[idxGeo]) coords = convertGarmin(cols[idxGeo]);
+    if (!coords && idxLat >= 0 && idxLon >= 0) {
+      const lat = parseFloat(cols[idxLat]?.replace(',','.'));
+      const lon = parseFloat(cols[idxLon]?.replace(',','.'));
+      if (!isNaN(lat) && !isNaN(lon)) coords = { lat, lon };
+    }
+    if (coords) {
+      tasks.push({
+        ...coords,
+        numeroOT: cols[idxOT] || `OT${i}`,
+        tipoTarea: cols[idxTipo] || 'Lectura',
+        prioridad: cols[idxPrio] || 'Media',
+        suministro: cols[idxSum] || 'S/S',
+        direccion: cols[idxDir] || '',
+        titular: cols[idxTit] || '',
+        observaciones: cols[idxObs] || '',
+        status: 'Pendiente'
+      });
+    }
+  }
+  return tasks;
+}
+
+function statusColor(status) {
+  return {
+    Pendiente: '#3b82f6', EnProgreso: '#f59e0b', Completada: '#22c55e',
+    Rechazada: '#6b7280', Ausente: '#ef4444'
+  }[status] || '#3b82f6';
+}
+
+function renderTasks() {
+  markersGroup.clearLayers();
+  tasks.forEach((t, idx) => {
+    const isActive = idx === activeTaskIndex;
+    const color = statusColor(t.status);
+    const marker = L.circleMarker([t.lat, t.lon], {
+      radius: isActive ? 16 : 8,
+      fillColor: color,
+      color: '#fff',
+      weight: isActive ? 3 : 1,
+      fillOpacity: (t.status === 'Completada' || t.status === 'Rechazada') ? 0.4 : 0.9,
+      zIndexOffset: isActive ? 500 : 0
+    });
+    
+    const canReopen = t.status === 'Completada' || t.status === 'Rechazada';
+    const reopenBtn = canReopen 
+      ? `<button class="popup-btn" style="background:#f97316" onclick="event.stopPropagation();reopenTask(${idx})">↩ Reabrir</button>` 
+      : '';
+    const irBtn = (t.status === 'Pendiente' || t.status === 'EnProgreso')
+      ? `<button class="popup-btn" style="background:#4285f4" onclick="event.stopPropagation();irATarea(${idx})">🚗 IR</button>`
+      : '';
+    
+    const popupHtml = `
+      <div class="popup-nav-title">OT: ${t.numeroOT} <span style="color:${color}">[${t.status}]</span></div>
+      <div class="popup-nav-text">
+        <b>Tipo:</b> ${t.tipoTarea} | <b>Prioridad:</b> ${t.prioridad}<br>
+        <b>Sum:</b> ${t.suministro}<br><b>Dir:</b> ${t.direccion}<br>
+        ${t.titular ? '<b>Titular:</b> '+t.titular+'<br>' : ''}
+        ${t.observaciones ? '<i>'+t.observaciones+'</i>' : ''}
+      </div>
+      <div class="popup-btn-row">
+        ${irBtn}
+        ${reopenBtn}
+      </div>`;
+    marker.bindPopup(popupHtml, { maxWidth: 280, autoClose: false, closeOnClick: false });
+    
+    marker.on('click', () => {
+      activeTaskIndex = idx;
+      updateNavigation();
+      renderTasks();
+      setTimeout(() => {
+        const layer = markersGroup.getLayers().find(l => l.getLatLng && l.getLatLng().lat === t.lat && l.getLatLng().lng === t.lon);
+        if (layer) layer.openPopup();
+      }, 100);
+    });
+    markersGroup.addLayer(marker);
+  });
+}
+
+// Función unificada para "IR": pone en progreso y abre Google Maps
+function irATarea(index) {
+  if (index < 0 || index >= tasks.length) return;
+  if (tasks[index].status === 'Pendiente' || tasks[index].status === 'EnProgreso') {
+    tasks[index].status = 'EnProgreso';
+    saveProgress();
+    activeTaskIndex = index;
+    updateNavigation();
+    renderTasks();
+    // Abrir Google Maps
+    const t = tasks[index];
+    window.open(`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${t.lat},${t.lon}`, '_blank');
+  }
+}
+
+// Botón "IR" del HUD que actúa sobre la tarea activa
+function irATareaActiva() {
+  irATarea(activeTaskIndex);
+}
+
+async function findNextActiveTask() {
+  const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso');
+  if (!pendientes.length) {
+    activeTaskIndex = -1;
+    updateNavigation();
+    renderTasks();
+    return;
+  }
+
+  if (!userLatLng || pendientes.length === 1) {
+    setActiveByStraightLine(pendientes);
+    updateNavigation();
+    renderTasks();
+    return;
+  }
+
+  const indicator = document.getElementById('calculating-indicator');
+  if (indicator) indicator.style.display = 'block';
+
+  const withDist = pendientes.map(t => ({
+    task: t,
+    distStraight: distSq({ lat: userLatLng[0], lon: userLatLng[1] }, t)
+  }));
+  withDist.sort((a, b) => a.distStraight - b.distStraight);
+  const candidates = withDist.slice(0, CANDIDATE_LIMIT).map(d => d.task);
+
+  const realDistances = await getRealDistances(userLatLng, candidates);
+
+  if (realDistances) {
+    let bestIdx = -1, minVal = Infinity;
+    candidates.forEach((t, i) => {
+      if (realDistances[i] !== null && realDistances[i] < minVal) {
+        minVal = realDistances[i];
+        bestIdx = tasks.indexOf(t);
+      }
+    });
+    activeTaskIndex = bestIdx !== -1 ? bestIdx : tasks.indexOf(candidates[0]);
+  } else {
+    activeTaskIndex = tasks.indexOf(candidates[0]);
+  }
+
+  if (indicator) indicator.style.display = 'none';
+  updateNavigation();
+  renderTasks();
+}
+
+function setActiveByStraightLine(pendientes) {
+  if (userLatLng) {
+    let minD = Infinity, idx = -1;
+    pendientes.forEach(t => {
+      const d = distSq({ lat: userLatLng[0], lon: userLatLng[1] }, t);
+      if (d < minD) { minD = d; idx = tasks.indexOf(t); }
+    });
+    activeTaskIndex = idx;
+  } else {
+    activeTaskIndex = tasks.indexOf(pendientes[0]);
+  }
+}
+
+async function changeTaskStatus(newStatus) {
+  if (activeTaskIndex < 0 || activeTaskIndex >= tasks.length) return;
+  tasks[activeTaskIndex].status = newStatus;
+  saveProgress();
+  renderTasks();
+  if (newStatus === 'Completada' || newStatus === 'Rechazada') {
+    await findNextActiveTask();
+  } else {
+    updateNavigation();
+  }
+}
+
+async function reopenTask(index) {
+  if (index < 0 || index >= tasks.length) return;
+  if (tasks[index].status === 'Completada' || tasks[index].status === 'Rechazada') {
+    tasks[index].status = 'Pendiente';
+    saveProgress();
+    activeTaskIndex = index;
+    updateNavigation();
+    renderTasks();
+  }
+}
+
+function updateNavigation() {
+  const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso').length;
+  document.getElementById('hud-panel').style.display = tasks.length ? 'flex' : 'none';
+  
+  const actionsContainer = document.getElementById('btn-actions-container');
+  
+  if (activeTaskIndex === -1 || (tasks.length > 0 && pendientes === 0 && activeTaskIndex === -1)) {
+    document.getElementById('lbl-ot').textContent = "Sin tareas pendientes";
+    document.getElementById('lbl-detalles').textContent = "";
+    document.getElementById('lbl-distance').textContent = "✓";
+    document.getElementById('lbl-priority').textContent = "";
+    document.getElementById('lbl-status').textContent = "";
+    document.getElementById('lbl-tipo-tarea').textContent = "";
+    actionsContainer.innerHTML = '';
+    return;
+  }
+  
+  const t = tasks[activeTaskIndex];
+  document.getElementById('lbl-priority').textContent = t.prioridad;
+  document.getElementById('lbl-priority').className = `badge-priority priority-${t.prioridad}`;
+  document.getElementById('lbl-status').textContent = t.status;
+  document.getElementById('lbl-status').className = `status-badge status-${t.status}`;
+  document.getElementById('lbl-ot').textContent = `OT: ${t.numeroOT}`;
+  document.getElementById('lbl-detalles').textContent = `Sum: ${t.suministro} | Dir: ${t.direccion}${t.titular?' | '+t.titular:''}`;
+  document.getElementById('lbl-tipo-tarea').textContent = `Tipo: ${t.tipoTarea}${t.observaciones?' - '+t.observaciones:''}`;
+  
+  let actionButtons = '';
+  if (t.status === 'Pendiente') {
+    actionButtons = `
+      <button class="btn-ir" onclick="irATareaActiva()">🚗 IR</button>
+      <button class="btn-complete" onclick="changeTaskStatus('Completada')">✓ Listo</button>
+      <button class="btn-reject" onclick="changeTaskStatus('Rechazada')">✗ Rechazar</button>
+    `;
+  } else if (t.status === 'EnProgreso') {
+    actionButtons = `
+      <button class="btn-ir" onclick="irATareaActiva()">🚗 IR</button>
+      <button class="btn-complete" onclick="changeTaskStatus('Completada')">✓ Listo</button>
+      <button class="btn-reject" onclick="changeTaskStatus('Rechazada')">✗ Rechazar</button>
+    `;
+  } else {
+    actionButtons = `<button class="btn-undo" onclick="reopenTask(activeTaskIndex)">↩ Deshacer</button>`;
+  }
+  actionsContainer.innerHTML = actionButtons;
+  
+  if (userLatLng) {
+    const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
+    document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
+    if (GOOGLE_MAPS_API_KEY) {
+      googleDirectionsETA(t);
+    } else {
+      osrmRoute(t);
+    }
+  } else {
+    document.getElementById('lbl-distance').textContent = '--';
+  }
+}
+
+async function getRealDistances(origin, destinations) {
+  const destCoords = destinations.map(d => `${d.lon},${d.lat}`).join(';');
+  const url = `https://router.project-osrm.org/table/v1/driving/${origin[1]},${origin[0]};${destCoords}?sources=0&annotations=distance`;
+  try {
+    const response = await fetch(url);
+    const data = await response.json();
+    if (data.code === 'Ok' && data.distances) return data.distances[0];
+  } catch (e) { console.warn('Error OSRM Table:', e); }
+  return null;
+}
+
+function osrmRoute(t) {
+  const url = `https://router.project-osrm.org/route/v1/driving/${userLatLng[1]},${userLatLng[0]};${t.lon},${t.lat}?overview=full&geometries=geojson`;
+  fetch(url).then(r => r.json()).then(data => {
+    if (data.routes?.length) {
+      drawLine(data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), '#ff3b30');
+    } else fallbackLine(t);
+  }).catch(() => fallbackLine(t));
+}
+
+function googleDirectionsETA(t) {
+  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${userLatLng[0]},${userLatLng[1]}&destination=${t.lat},${t.lon}&departure_time=now&traffic_model=best_guess&key=${GOOGLE_MAPS_API_KEY}`;
+  fetch(url).then(r => r.json()).then(data => {
+    if (data.routes?.length) {
+      const leg = data.routes[0].legs[0];
+      document.getElementById('lbl-distance').textContent = leg.duration_in_traffic?.text || leg.duration.text;
+      if (data.routes[0].overview_polyline) drawLine(decodePolyline(data.routes[0].overview_polyline.points), '#4285f4');
+    }
+  }).catch(() => osrmRoute(t));
+}
+
+function decodePolyline(encoded) {
+  let points = [], index = 0, lat = 0, lng = 0;
+  while (index < encoded.length) {
+    let b, shift = 0, result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
+    shift = 0; result = 0;
+    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
+    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
+    points.push([lat / 1e5, lng / 1e5]);
+  }
+  return points;
+}
+
+function drawLine(coords, color) {
+  if (navigationLine) {
+    navigationLine.setLatLngs(coords);
+    navigationLine.setStyle({ color, weight: 5 });
+  } else {
+    navigationLine = L.polyline(coords, { color, weight: 5, opacity: 0.85 }).addTo(map);
+  }
+}
+
+function fallbackLine(t) {
+  if (!userLatLng) return;
+  drawLine([userLatLng, [t.lat, t.lon]], '#f97316');
+}
+
+function centerOnUser() {
+  if (userLatLng) map.setView(userLatLng, 17, { animate: true });
+}
+
+function fitMapToFeatures() {
+  const pts = tasks.map(t => [t.lat, t.lon]);
+  if (userLatLng) pts.push(userLatLng);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 17 });
+}
+
+function saveProgress() {
+  if (!currentRouteId) return;
+  try { localStorage.setItem(currentRouteId, JSON.stringify(tasks.map(t => t.status))); } catch(e) {}
+}
+function loadProgress() {
+  if (!currentRouteId) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(currentRouteId));
+    if (saved) tasks.forEach((t, i) => { if (saved[i]) t.status = saved[i]; });
+  } catch(e) {}
+}
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371e3, toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
+  const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+</script>
+</body>
+</html>
