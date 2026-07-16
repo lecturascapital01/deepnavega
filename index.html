@@ -3,10 +3,30 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Gestión de Órdenes de Trabajo - Energía</title>
+<title>EC SAPEM - Navegador de trabajo</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script>
+// Manifest para PWA (embedido)
+const manifest = {
+  name: "EC SAPEM Navegador de Trabajo",
+  short_name: "EC SAPEM",
+  description: "Navegador de órdenes de trabajo para EC SAPEM",
+  start_url: ".",
+  display: "standalone",
+  background_color: "#0b0d13",
+  theme_color: "#4fd8a4",
+  icons: [{
+    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%234fd8a4'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='%230b0d13' font-family='Arial'%3E⚡%3C/text%3E%3C/svg%3E",
+    sizes: "100x100",
+    type: "image/svg+xml"
+  }]
+};
+const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+const manifestURL = URL.createObjectURL(blob);
+document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+</script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
 
@@ -15,7 +35,7 @@
   --border: rgba(255,255,255,0.08); --accent: #4fd8a4;
   --accent-blue: #3dbfe8; --google-maps: #4285f4;
   --status-pending: #3b82f6; --status-progress: #f59e0b; --status-done: #22c55e;
-  --status-rejected: #6b7280; --status-absent: #ef4444;
+  --status-rejected: #6b7280;
   --text: #e2e8f0; --text-muted: #94a3b8;
 }
 
@@ -48,7 +68,6 @@ header {
 }
 @keyframes spin { 100% { transform: translate(-50%, -50%) rotate(360deg); } }
 
-/* HUD flotante */
 #hud-panel {
   position: absolute; top: 12px; left: 12px; right: 12px; z-index: 950;
   background: rgba(20, 24, 36, 0.92); backdrop-filter: blur(14px);
@@ -78,23 +97,13 @@ header {
 .status-Completada { background: var(--status-done); color: black; }
 .status-Rechazada { background: var(--status-rejected); color: white; }
 
-.button-group-nav { display: flex; gap: 8px; width: 100%; }
-.btn-ext-nav {
-  flex: 1; padding: 14px; border: none; border-radius: 10px; font-size: 14px;
-  font-weight: bold; color: #ffffff; cursor: pointer; display: flex; align-items: center;
-  justify-content: center; gap: 6px; text-transform: uppercase;
-}
-.btn-gmaps { background: var(--google-maps); }
-
-.btn-actions {
-  display: flex; gap: 8px; width: 100%;
-}
+.btn-actions { display: flex; gap: 8px; width: 100%; }
 .btn-ir, .btn-complete, .btn-reject, .btn-undo {
   flex: 1; padding: 12px 5px; border: none; border-radius: 8px; font-size: 11px;
   font-weight: bold; cursor: pointer; text-transform: uppercase; display: flex; align-items: center;
   justify-content: center; gap: 4px;
 }
-.btn-ir { background: var(--google-maps); color: white; }      /* azul Google Maps */
+.btn-ir { background: var(--google-maps); color: white; }
 .btn-complete { background: var(--status-done); color: black; }
 .btn-reject { background: var(--status-rejected); color: white; }
 .btn-undo { background: #f97316; color: white; }
@@ -104,6 +113,22 @@ header {
   width: 52px; height: 52px; background: var(--surface2); border: 2px solid rgba(255,255,255,0.15);
   border-radius: 50%; display: flex; align-items: center; justify-content: center;
   box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer; font-size: 22px;
+}
+
+/* Crédito estilo Leaflet */
+#credits {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  z-index: 1000;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 2px 5px;
+  border-radius: 0 4px 0 0;
+  font-family: 'Helvetica Neue', Arial, Helvetica, sans-serif;
+  font-size: 10px;
+  color: #ccc;
+  line-height: 1.2;
+  pointer-events: none;
 }
 
 #calculating-indicator {
@@ -146,7 +171,7 @@ header {
 <body>
 <div class="app-container">
   <header>
-    <div class="title">⚡ OT Energía</div>
+    <div class="title">EC SAPEM - Navegador de trabajo</div>
     <div class="file-input-wrapper">
       <button class="btn-file">📂 Cargar OT</button>
       <input type="file" id="file-loader" accept=".gpx,.txt,.csv,.xls,.xlsx">
@@ -174,6 +199,7 @@ header {
 
     <button class="btn-gps-lock" onclick="centerOnUser()" title="Mi ubicación">📍</button>
     <div id="calculating-indicator">⏳ Buscando mejor ruta...</div>
+    <div id="credits">Contacto: Jorge Guzman - 3834 602667</div>
     
     <div id="empty-state">
       <div style="font-size:36px;">🗺️</div>
@@ -183,8 +209,10 @@ header {
 </div>
 
 <script>
-const GOOGLE_MAPS_API_KEY = ''; // Opcional
+// CONFIGURACIÓN
+const GOOGLE_MAPS_API_KEY = ''; // <-- Ingresá tu API Key de Google
 const CANDIDATE_LIMIT = 20;
+const USE_GOOGLE_TRAFFIC = GOOGLE_MAPS_API_KEY !== '';
 
 let map, userLatLng = null, userMarker = null;
 let tasks = [];  
@@ -195,21 +223,30 @@ let currentRouteId = "";
 
 const distSq = (a, b) => (a.lat - b.lat)**2 + (a.lon - b.lon)**2;
 
+// Service Worker para PWA
+if ('serviceWorker' in navigator) {
+  const swCode = `
+    const CACHE_NAME = 'ec-sapem-v1';
+    self.addEventListener('install', e => {
+      e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(['.'])));
+    });
+    self.addEventListener('fetch', e => {
+      e.respondWith(caches.match(e.request).then(r => r || fetch(e.request)));
+    });
+  `;
+  const swBlob = new Blob([swCode], {type: 'application/javascript'});
+  const swURL = URL.createObjectURL(swBlob);
+  navigator.serviceWorker.register(swURL, {scope: '.'})
+    .then(reg => console.log('SW registrado', reg.scope))
+    .catch(err => console.warn('SW no registrado', err));
+}
+
+// Inicializar mapa
 document.addEventListener("DOMContentLoaded", () => {
-  map = L.map('map', { 
-    zoomControl: false, 
-    center: [-28.4689, -65.7792], 
-    zoom: 15, 
-    preferCanvas: true 
-  });
-  
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    updateWhenIdle: true,
-    keepBuffer: 3
-  }).on('tileload', () => {
-    document.getElementById('map-spinner').style.display = 'none';
-  }).addTo(map);
-  
+  map = L.map('map', { zoomControl: false, center: [-28.4689, -65.7792], zoom: 15, preferCanvas: true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { updateWhenIdle: true, keepBuffer: 3 })
+    .on('tileload', () => document.getElementById('map-spinner').style.display = 'none')
+    .addTo(map);
   markersGroup = L.layerGroup().addTo(map);
   setTimeout(initGPS, 500);
 });
@@ -224,16 +261,15 @@ function initGPS() {
           icon: L.divIcon({ className: 'pulse-user', iconSize: [16, 16], iconAnchor: [8, 8] }),
           zIndexOffset: 1000
         }).addTo(map);
-      } else {
-        userMarker.setLatLng(userLatLng);
-      }
-      if (tasks.length > 0) updateNavigation();
+      } else userMarker.setLatLng(userLatLng);
+      if (tasks.length) updateNavigation();
     },
     e => console.warn("GPS:", e.message),
     { enableHighAccuracy: true, maximumAge: 0, timeout: 12000 }
   );
 }
 
+// Cargar archivo
 document.getElementById('file-loader').addEventListener('change', async function(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -270,6 +306,7 @@ document.getElementById('file-loader').addEventListener('change', async function
   reader[ext.endsWith('.xls') || ext.endsWith('.xlsx') ? 'readAsArrayBuffer' : 'readAsText'](file, 'ISO-8859-1');
 });
 
+// Parsers (los mismos)
 function parseGPX(xmlText) {
   const xml = new DOMParser().parseFromString(xmlText, "text/xml");
   const wpts = xml.getElementsByTagName("wpt");
@@ -345,11 +382,8 @@ function parseMatrix(matrix) {
   return tasks;
 }
 
-function statusColor(status) {
-  return {
-    Pendiente: '#3b82f6', EnProgreso: '#f59e0b', Completada: '#22c55e',
-    Rechazada: '#6b7280', Ausente: '#ef4444'
-  }[status] || '#3b82f6';
+function statusColor(s) {
+  return {Pendiente:'#3b82f6',EnProgreso:'#f59e0b',Completada:'#22c55e',Rechazada:'#6b7280'}[s]||'#3b82f6';
 }
 
 function renderTasks() {
@@ -401,7 +435,6 @@ function renderTasks() {
   });
 }
 
-// Función unificada para "IR": pone en progreso y abre Google Maps
 function irATarea(index) {
   if (index < 0 || index >= tasks.length) return;
   if (tasks[index].status === 'Pendiente' || tasks[index].status === 'EnProgreso') {
@@ -410,74 +443,70 @@ function irATarea(index) {
     activeTaskIndex = index;
     updateNavigation();
     renderTasks();
-    // Abrir Google Maps
-    const t = tasks[index];
-    window.open(`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${t.lat},${t.lon}`, '_blank');
+    window.open(`https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${tasks[index].lat},${tasks[index].lon}`, '_blank');
   }
 }
 
-// Botón "IR" del HUD que actúa sobre la tarea activa
-function irATareaActiva() {
-  irATarea(activeTaskIndex);
-}
+function irATareaActiva() { irATarea(activeTaskIndex); }
 
+// Selección inteligente
 async function findNextActiveTask() {
   const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso');
-  if (!pendientes.length) {
-    activeTaskIndex = -1;
-    updateNavigation();
-    renderTasks();
-    return;
-  }
-
-  if (!userLatLng || pendientes.length === 1) {
-    setActiveByStraightLine(pendientes);
-    updateNavigation();
-    renderTasks();
-    return;
-  }
-
+  if (!pendientes.length) { activeTaskIndex = -1; updateNavigation(); renderTasks(); return; }
+  if (!userLatLng || pendientes.length === 1) { setActiveByStraightLine(pendientes); updateNavigation(); renderTasks(); return; }
   const indicator = document.getElementById('calculating-indicator');
   if (indicator) indicator.style.display = 'block';
-
-  const withDist = pendientes.map(t => ({
-    task: t,
-    distStraight: distSq({ lat: userLatLng[0], lon: userLatLng[1] }, t)
-  }));
-  withDist.sort((a, b) => a.distStraight - b.distStraight);
-  const candidates = withDist.slice(0, CANDIDATE_LIMIT).map(d => d.task);
-
-  const realDistances = await getRealDistances(userLatLng, candidates);
-
-  if (realDistances) {
-    let bestIdx = -1, minVal = Infinity;
-    candidates.forEach((t, i) => {
-      if (realDistances[i] !== null && realDistances[i] < minVal) {
-        minVal = realDistances[i];
-        bestIdx = tasks.indexOf(t);
-      }
-    });
-    activeTaskIndex = bestIdx !== -1 ? bestIdx : tasks.indexOf(candidates[0]);
-  } else {
-    activeTaskIndex = tasks.indexOf(candidates[0]);
-  }
-
+  try {
+    activeTaskIndex = USE_GOOGLE_TRAFFIC
+      ? await findClosestByGoogleTraffic(userLatLng, pendientes)
+      : await findClosestByOSRMTable(userLatLng, pendientes);
+  } catch (e) { console.warn('Error selección, usando línea recta', e); setActiveByStraightLine(pendientes); }
   if (indicator) indicator.style.display = 'none';
   updateNavigation();
   renderTasks();
+}
+
+async function findClosestByGoogleTraffic(origin, candidates) {
+  const origins = `${origin[0]},${origin[1]}`;
+  const destinations = candidates.map(t => `${t.lat},${t.lon}`).join('|');
+  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origins}&destinations=${destinations}&departure_time=now&traffic_model=best_guess&key=${GOOGLE_MAPS_API_KEY}`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.status !== 'OK') throw new Error('Google Matrix falló');
+  const elements = data.rows[0].elements;
+  let bestIdx = -1, minDuration = Infinity;
+  candidates.forEach((t, i) => {
+    if (elements[i].status === 'OK' && elements[i].duration_in_traffic) {
+      const sec = elements[i].duration_in_traffic.value;
+      if (sec < minDuration) { minDuration = sec; bestIdx = tasks.indexOf(t); }
+    }
+  });
+  return bestIdx !== -1 ? bestIdx : tasks.indexOf(candidates[0]);
+}
+
+async function findClosestByOSRMTable(origin, candidates) {
+  const destCoords = candidates.map(d => `${d.lon},${d.lat}`).join(';');
+  const url = `https://router.project-osrm.org/table/v1/driving/${origin[1]},${origin[0]};${destCoords}?sources=0&annotations=distance`;
+  const res = await fetch(url);
+  const data = await res.json();
+  if (data.code !== 'Ok') throw new Error('OSRM Table falló');
+  const distances = data.distances[0];
+  let bestIdx = -1, minDist = Infinity;
+  candidates.forEach((t, i) => {
+    if (distances[i] !== null && distances[i] < minDist) { minDist = distances[i]; bestIdx = tasks.indexOf(t); }
+  });
+  return bestIdx !== -1 ? bestIdx : tasks.indexOf(candidates[0]);
 }
 
 function setActiveByStraightLine(pendientes) {
   if (userLatLng) {
     let minD = Infinity, idx = -1;
     pendientes.forEach(t => {
-      const d = distSq({ lat: userLatLng[0], lon: userLatLng[1] }, t);
+      const d = distSq({lat: userLatLng[0], lon: userLatLng[1]}, t);
       if (d < minD) { minD = d; idx = tasks.indexOf(t); }
     });
     activeTaskIndex = idx;
-  } else {
-    activeTaskIndex = tasks.indexOf(pendientes[0]);
-  }
+  } else activeTaskIndex = tasks.indexOf(pendientes[0]);
 }
 
 async function changeTaskStatus(newStatus) {
@@ -485,11 +514,8 @@ async function changeTaskStatus(newStatus) {
   tasks[activeTaskIndex].status = newStatus;
   saveProgress();
   renderTasks();
-  if (newStatus === 'Completada' || newStatus === 'Rechazada') {
-    await findNextActiveTask();
-  } else {
-    updateNavigation();
-  }
+  if (newStatus === 'Completada' || newStatus === 'Rechazada') await findNextActiveTask();
+  else updateNavigation();
 }
 
 async function reopenTask(index) {
@@ -506,7 +532,6 @@ async function reopenTask(index) {
 function updateNavigation() {
   const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso').length;
   document.getElementById('hud-panel').style.display = tasks.length ? 'flex' : 'none';
-  
   const actionsContainer = document.getElementById('btn-actions-container');
   
   if (activeTaskIndex === -1 || (tasks.length > 0 && pendientes === 0 && activeTaskIndex === -1)) {
@@ -530,13 +555,7 @@ function updateNavigation() {
   document.getElementById('lbl-tipo-tarea').textContent = `Tipo: ${t.tipoTarea}${t.observaciones?' - '+t.observaciones:''}`;
   
   let actionButtons = '';
-  if (t.status === 'Pendiente') {
-    actionButtons = `
-      <button class="btn-ir" onclick="irATareaActiva()">🚗 IR</button>
-      <button class="btn-complete" onclick="changeTaskStatus('Completada')">✓ Listo</button>
-      <button class="btn-reject" onclick="changeTaskStatus('Rechazada')">✗ Rechazar</button>
-    `;
-  } else if (t.status === 'EnProgreso') {
+  if (t.status === 'Pendiente' || t.status === 'EnProgreso') {
     actionButtons = `
       <button class="btn-ir" onclick="irATareaActiva()">🚗 IR</button>
       <button class="btn-complete" onclick="changeTaskStatus('Completada')">✓ Listo</button>
@@ -548,46 +567,33 @@ function updateNavigation() {
   actionsContainer.innerHTML = actionButtons;
   
   if (userLatLng) {
-    const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
-    document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
-    if (GOOGLE_MAPS_API_KEY) {
-      googleDirectionsETA(t);
-    } else {
-      osrmRoute(t);
-    }
-  } else {
-    document.getElementById('lbl-distance').textContent = '--';
-  }
+    if (USE_GOOGLE_TRAFFIC) googleDirectionsETA(t);
+    else osrmRoute(t);
+  } else document.getElementById('lbl-distance').textContent = '--';
 }
 
-async function getRealDistances(origin, destinations) {
-  const destCoords = destinations.map(d => `${d.lon},${d.lat}`).join(';');
-  const url = `https://router.project-osrm.org/table/v1/driving/${origin[1]},${origin[0]};${destCoords}?sources=0&annotations=distance`;
-  try {
-    const response = await fetch(url);
-    const data = await response.json();
-    if (data.code === 'Ok' && data.distances) return data.distances[0];
-  } catch (e) { console.warn('Error OSRM Table:', e); }
-  return null;
-}
-
+// APIs de ruta
 function osrmRoute(t) {
   const url = `https://router.project-osrm.org/route/v1/driving/${userLatLng[1]},${userLatLng[0]};${t.lon},${t.lat}?overview=full&geometries=geojson`;
   fetch(url).then(r => r.json()).then(data => {
     if (data.routes?.length) {
       drawLine(data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), '#ff3b30');
+      const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
+      document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
     } else fallbackLine(t);
   }).catch(() => fallbackLine(t));
 }
 
 function googleDirectionsETA(t) {
-  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${userLatLng[0]},${userLatLng[1]}&destination=${t.lat},${t.lon}&departure_time=now&traffic_model=best_guess&key=${GOOGLE_MAPS_API_KEY}`;
+  const origin = `${userLatLng[0]},${userLatLng[1]}`;
+  const dest = `${t.lat},${t.lon}`;
+  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&departure_time=now&traffic_model=best_guess&key=${GOOGLE_MAPS_API_KEY}`;
   fetch(url).then(r => r.json()).then(data => {
     if (data.routes?.length) {
       const leg = data.routes[0].legs[0];
       document.getElementById('lbl-distance').textContent = leg.duration_in_traffic?.text || leg.duration.text;
       if (data.routes[0].overview_polyline) drawLine(decodePolyline(data.routes[0].overview_polyline.points), '#4285f4');
-    }
+    } else fallbackLine(t);
   }).catch(() => osrmRoute(t));
 }
 
@@ -619,9 +625,7 @@ function fallbackLine(t) {
   drawLine([userLatLng, [t.lat, t.lon]], '#f97316');
 }
 
-function centerOnUser() {
-  if (userLatLng) map.setView(userLatLng, 17, { animate: true });
-}
+function centerOnUser() { if (userLatLng) map.setView(userLatLng, 17, { animate: true }); }
 
 function fitMapToFeatures() {
   const pts = tasks.map(t => [t.lat, t.lon]);
