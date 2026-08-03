@@ -8,24 +8,26 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-// ========== PWA Manifest ==========
-const manifest = {
-  name: "EC SAPEM Navegador de Trabajo",
-  short_name: "EC SAPEM",
-  description: "Navegador de órdenes de trabajo y lecturas para EC SAPEM",
-  start_url: ".",
-  display: "standalone",
-  background_color: "#0b0d13",
-  theme_color: "#4fd8a4",
-  icons: [{
-    src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%234fd8a4'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='%230b0d13' font-family='Arial'%3E⚡%3C/text%3E%3C/svg%3E",
-    sizes: "100x100",
-    type: "image/svg+xml"
-  }]
-};
-const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-const manifestURL = URL.createObjectURL(blob);
-document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+// ========== PWA Manifest (solo si no es file://) ==========
+if (window.location.protocol !== 'file:') {
+  const manifest = {
+    name: "EC SAPEM Navegador de Trabajo",
+    short_name: "EC SAPEM",
+    description: "Navegador de órdenes de trabajo y lecturas para EC SAPEM",
+    start_url: ".",
+    display: "standalone",
+    background_color: "#0b0d13",
+    theme_color: "#4fd8a4",
+    icons: [{
+      src: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ccircle cx='50' cy='50' r='45' fill='%234fd8a4'/%3E%3Ctext x='50' y='70' font-size='50' text-anchor='middle' fill='%230b0d13' font-family='Arial'%3E⚡%3C/text%3E%3C/svg%3E",
+      sizes: "100x100",
+      type: "image/svg+xml"
+    }]
+  };
+  const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+  const manifestURL = URL.createObjectURL(blob);
+  document.head.insertAdjacentHTML('beforeend', `<link rel="manifest" href="${manifestURL}">`);
+}
 </script>
 <style>
 /* ========== ESTILOS (se mantienen todos igual) ========== */
@@ -51,13 +53,29 @@ header {
   background: var(--surface); padding: 8px 15px; display: flex; 
   align-items: center; justify-content: space-between; border-bottom: 1px solid var(--border); 
   z-index: 1100; backdrop-filter: blur(10px);
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .title { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 800; color: var(--accent); }
-.file-input-wrapper { position: relative; overflow: hidden; display: inline-block; }
-.btn-file { 
-  background: var(--surface2); border: 1px solid var(--accent); padding: 8px 16px; 
-  border-radius: 8px; font-size: 12px; color: var(--accent); cursor: pointer; font-weight: 600;
+.header-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
+.header-controls select, .header-controls .btn-file {
+  background: var(--surface2);
+  border: 1px solid var(--accent);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  font-weight: 600;
+  font-family: 'DM Mono', monospace;
+}
+.header-controls select option { background: var(--surface); color: var(--text); }
+.file-input-wrapper { position: relative; overflow: hidden; display: inline-block; }
 .file-input-wrapper input[type=file] { position: absolute; left: 0; top: 0; opacity: 0; width: 100%; height: 100%; cursor: pointer; }
 
 #map-container { flex: 1; position: relative; }
@@ -113,19 +131,31 @@ header {
 .btn-reject { background: var(--status-rejected); color: white; }
 .btn-undo { background: #f97316; color: white; }
 
-.btn-gps-lock {
-  position: absolute; bottom: 24px; right: 16px; z-index: 960;
-  width: 52px; height: 52px; background: var(--surface2); border: 2px solid rgba(255,255,255,0.15);
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer; font-size: 22px;
+/* Botones flotantes */
+.btn-float {
+  position: absolute;
+  z-index: 960;
+  width: 52px;
+  height: 52px;
+  background: var(--surface2);
+  border: 2px solid rgba(255,255,255,0.15);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  cursor: pointer;
+  font-size: 20px;
+  transition: all 0.2s;
 }
+.btn-float:hover { transform: scale(1.08); background: var(--surface); }
+.btn-float.active { border-color: var(--accent); background: var(--accent); color: var(--bg); }
 
-.btn-reorder {
-  position: absolute; bottom: 24px; left: 16px; z-index: 960;
-  width: 52px; height: 52px; background: var(--surface2); border: 2px solid rgba(255,255,255,0.15);
-  border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.5); cursor: pointer; font-size: 20px;
-}
+.btn-gps-lock { bottom: 24px; right: 16px; }
+.btn-reorder { bottom: 24px; left: 16px; }
+.btn-origin { bottom: 90px; left: 16px; font-size: 18px; }
+.btn-list { bottom: 90px; right: 16px; width: auto; padding: 0 16px; border-radius: 50px; font-size: 13px; gap: 6px; }
+.btn-list span { background: var(--accent); color: var(--bg); border-radius: 50%; padding: 0 6px; font-size: 11px; min-width: 20px; text-align: center; }
 
 #credits {
   position: absolute; bottom: 0; left: 0; z-index: 1000;
@@ -171,30 +201,6 @@ header {
 }
 
 /* ========== ESTILOS DEL LISTADO MODAL (igual) ========== */
-.btn-list {
-    position: absolute;
-    bottom: 90px;
-    right: 16px;
-    z-index: 960;
-    background: var(--surface2);
-    border: 2px solid var(--accent);
-    border-radius: 50px;
-    padding: 10px 16px;
-    color: var(--accent);
-    font-size: 13px;
-    font-weight: bold;
-    cursor: pointer;
-    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.3s;
-}
-.btn-list:hover {
-    background: var(--accent);
-    color: var(--bg);
-    transform: scale(1.05);
-}
 .modal-overlay {
     display: none;
     position: absolute;
@@ -408,10 +414,16 @@ header {
 <body>
 <div class="app-container">
   <header>
-    <div class="title">EC SAPEM - Navegador de trabajo</div>
-    <div class="file-input-wrapper">
-      <button class="btn-file">📂 Cargar Archivo</button>
-      <input type="file" id="file-loader" accept=".gpx,.txt,.csv,.xls,.xlsx">
+    <div class="title">EC SAPEM · Navegador</div>
+    <div class="header-controls">
+      <select id="profile-select">
+        <option value="driving">🚗 Vehículo</option>
+        <option value="foot">🚶 A pie</option>
+      </select>
+      <div class="file-input-wrapper">
+        <button class="btn-file">📂 Cargar</button>
+        <input type="file" id="file-loader" accept=".gpx,.txt,.csv,.xls,.xlsx">
+      </div>
     </div>
   </header>
 
@@ -433,18 +445,21 @@ header {
       <div class="btn-actions" id="btn-actions-container"></div>
     </div>
 
-    <button class="btn-list" onclick="openTaskList()" id="btnOpenList">
-        📋 Lista <span id="totalCount">0</span>
+    <!-- Botones flotantes -->
+    <button class="btn-float btn-origin" id="btn-pick-origin" title="Elegir punto de partida en el mapa">📍</button>
+    <button class="btn-float btn-gps-lock" onclick="centerOnUser()" title="Mi ubicación">📡</button>
+    <button class="btn-float btn-reorder" onclick="reorderTasks()" title="Reordenar por ruta real">🔄</button>
+    <button class="btn-float btn-list" onclick="openTaskList()" id="btnOpenList">
+        📋 <span id="totalCount">0</span>
     </button>
 
-    <button class="btn-gps-lock" onclick="centerOnUser()" title="Mi ubicación">📍</button>
-    <button class="btn-reorder" onclick="reorderTasks()" title="Reordenar por proximidad geográfica">🔄</button>
-    <div id="calculating-indicator">⏳ Reordenando puntos...</div>
+    <div id="calculating-indicator">⏳ Calculando ruta óptima...</div>
     <div id="credits">Contacto: Jorge Guzman - 3834 602667</div>
     
     <div id="empty-state">
       <div style="font-size:36px;">🗺️</div>
-      <p>Cargá tu archivo con las Órdenes de Trabajo o Lecturas.<br>El sistema ordenará los puntos geográficamente para una ruta lógica.</p>
+      <p>Cargá tu archivo con las Órdenes de Trabajo o Lecturas.<br>El sistema calculará la ruta óptima usando el motor OSRM.</p>
+      <p style="font-size:11px; margin-top:6px;">Podés elegir entre perfil vehicular o peatonal, y fijar un punto de partida en el mapa.</p>
     </div>
   </div>
 </div>
@@ -470,63 +485,112 @@ header {
 
 <script>
 // ========== CONFIGURACIÓN ==========
+const OSRM_HOST = "https://router.project-osrm.org";
 const GOOGLE_MAPS_API_KEY = '';
 const USE_GOOGLE_TRAFFIC = GOOGLE_MAPS_API_KEY !== '';
 
 let map, userLatLng = null, userMarker = null;
-let tasks = [];  
-let activeTaskIndex = -1;
+let tasks = [];              // array de objetos tarea
+let orden = [];              // array de índices (orden óptimo)
+let activeTaskIndex = -1;    // índice en tasks de la tarea activa
 let markersGroup = null;
-let navigationLine = null;
+let navigationLine = null;   // línea de ruta completa
 let currentRouteId = "";
 let gpsReady = false;
 let modoLectura = false;
+let perfilRuteo = 'driving';  // 'driving' | 'foot'
+let pickOriginMode = false;
+let origenPersonalizado = null; // { lat, lon, label } o null si se usa GPS
+
+// Throttle de rutas
+let lastRouteRequest = 0;
+let routeAbortController = null;
+let lastUserLatLng = null;
 
 const distSq = (a, b) => (a.lat - b.lat)**2 + (a.lon - b.lon)**2;
 
-// ========== SERVICE WORKER ==========
-if ('serviceWorker' in navigator) {
-  const swCode = `
-    const CACHE_NAME = 'ec-sapem-v2';
-    const urlsToCache = ['.'];
-    self.addEventListener('install', e => {
-      e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)));
-    });
-    self.addEventListener('fetch', e => {
-      const url = new URL(e.request.url);
-      if (url.hostname === 'tile.openstreetmap.org') {
-        e.respondWith(
-          caches.match(e.request).then(cached => {
-            const fetchPromise = fetch(e.request).then(response => {
-              const responseClone = response.clone();
-              caches.open('map-tiles').then(cache => cache.put(e.request, responseClone));
-              return response;
-            });
-            return cached || fetchPromise;
-          })
-        );
-      } else {
-        e.respondWith(caches.match(e.request).then(cached => cached || fetch(e.request)));
-      }
-    });
-  `;
-  const swBlob = new Blob([swCode], {type: 'application/javascript'});
-  const swURL = URL.createObjectURL(swBlob);
-  navigator.serviceWorker.register(swURL, {scope: '.'})
-    .then(reg => console.log('SW registrado', reg.scope))
-    .catch(err => console.warn('SW no registrado', err));
+// ========== SERVICE WORKER (con try/catch para file://) ==========
+if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
+  try {
+    const swCode = `
+      const CACHE_NAME = 'ec-sapem-v3';
+      const urlsToCache = ['.'];
+      self.addEventListener('install', e => {
+        e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)));
+      });
+      self.addEventListener('fetch', e => {
+        const url = new URL(e.request.url);
+        if (url.hostname === 'tile.openstreetmap.org') {
+          e.respondWith(
+            caches.match(e.request).then(cached => {
+              const fetchPromise = fetch(e.request).then(response => {
+                const responseClone = response.clone();
+                caches.open('map-tiles').then(cache => cache.put(e.request, responseClone));
+                return response;
+              });
+              return cached || fetchPromise;
+            })
+          );
+        } else {
+          e.respondWith(caches.match(e.request).then(cached => cached || fetch(e.request)));
+        }
+      });
+    `;
+    const swBlob = new Blob([swCode], {type: 'application/javascript'});
+    const swURL = URL.createObjectURL(swBlob);
+    navigator.serviceWorker.register(swURL, {scope: '.'})
+      .then(reg => console.log('SW registrado', reg.scope))
+      .catch(err => console.warn('SW no registrado (no crítico):', err));
+  } catch(e) { console.warn('SW error (no crítico):', e); }
 }
 
 // ========== INICIALIZACIÓN ==========
 document.addEventListener("DOMContentLoaded", () => {
+  // Crear mapa
   map = L.map('map', { zoomControl: false, center: [-28.4689, -65.7792], zoom: 15, preferCanvas: true });
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { updateWhenIdle: true, keepBuffer: 3 })
     .on('tileload', () => document.getElementById('map-spinner').style.display = 'none')
     .addTo(map);
   markersGroup = L.layerGroup().addTo(map);
+  
+  // Configurar selector de perfil
+  document.getElementById('profile-select').addEventListener('change', (e) => {
+    perfilRuteo = e.target.value;
+    if (tasks.length > 0) reorderTasks();
+  });
+  
+  // Botón elegir origen en el mapa
+  document.getElementById('btn-pick-origin').addEventListener('click', togglePickOrigin);
+  
+  // Evento click en el mapa (para elegir origen)
+  map.on('click', (e) => {
+    if (!pickOriginMode) return;
+    origenPersonalizado = { lat: e.latlng.lat, lon: e.latlng.lng, label: 'Punto elegido' };
+    pickOriginMode = false;
+    document.getElementById('btn-pick-origin').classList.remove('active');
+    document.getElementById('map').style.cursor = 'default';
+    document.getElementById('calculating-indicator').style.display = 'none';
+    if (tasks.length > 0) reorderTasks();
+  });
+  
+  // Cargar estado guardado
+  loadFullState();
   setTimeout(initGPS, 500);
-  loadOfflineTasks();
 });
+
+// ========== PICK ORIGIN EN EL MAPA ==========
+function togglePickOrigin() {
+  pickOriginMode = !pickOriginMode;
+  const btn = document.getElementById('btn-pick-origin');
+  btn.classList.toggle('active', pickOriginMode);
+  document.getElementById('map').style.cursor = pickOriginMode ? 'crosshair' : 'default';
+  if (pickOriginMode) {
+    document.getElementById('calculating-indicator').textContent = '📍 Hacé clic en el mapa para fijar el punto de partida';
+    document.getElementById('calculating-indicator').style.display = 'block';
+  } else {
+    document.getElementById('calculating-indicator').style.display = 'none';
+  }
+}
 
 // ========== GPS ==========
 function initGPS() {
@@ -540,14 +604,18 @@ function initGPS() {
           zIndexOffset: 1000
         }).addTo(map);
         gpsReady = true;
-        if (tasks.length > 0) findNextActiveTask();
+        if (tasks.length > 0 && !origenPersonalizado) {
+          reorderTasks();
+        }
       } else {
         userMarker.setLatLng(userLatLng);
         if (!gpsReady && tasks.length > 0) {
           gpsReady = true;
-          findNextActiveTask();
-        } else if (tasks.length > 0) {
-          renderTasks();
+          if (!origenPersonalizado) reorderTasks();
+        } else if (tasks.length > 0 && !origenPersonalizado) {
+          if (Date.now() - lastRouteRequest > 10000) {
+            reorderTasks();
+          }
         }
       }
       if (tasks.length) updateNavigation();
@@ -557,115 +625,228 @@ function initGPS() {
   );
 }
 
-// ========== ALGORITMO DE VECINO MÁS CERCANO (orden geográfico) ==========
-function orderByNearestNeighbor(tasksArray) {
-  if (tasksArray.length <= 1) return tasksArray.slice();
-  const ordered = [];
-  const remaining = tasksArray.slice();
-  // Empezar con el primer punto (puede ser cualquier punto, pero tomamos el primero del array original)
-  let current = remaining.shift();
-  ordered.push(current);
-  while (remaining.length > 0) {
-    let minDist = Infinity;
-    let minIdx = -1;
-    for (let i = 0; i < remaining.length; i++) {
-      const d = haversine(current.lat, current.lon, remaining[i].lat, remaining[i].lon);
-      if (d < minDist) {
-        minDist = d;
-        minIdx = i;
-      }
-    }
-    current = remaining.splice(minIdx, 1)[0];
-    ordered.push(current);
+// ========== OBTENER ORIGEN ==========
+function getOrigin() {
+  if (origenPersonalizado) {
+    return { lat: origenPersonalizado.lat, lon: origenPersonalizado.lon, label: origenPersonalizado.label };
   }
-  return ordered;
+  if (userLatLng) {
+    return { lat: userLatLng[0], lon: userLatLng[1], label: 'GPS' };
+  }
+  if (tasks.length > 0) {
+    return { lat: tasks[0].lat, lon: tasks[0].lon, label: 'Primer punto' };
+  }
+  return { lat: -28.4689, lon: -65.7792, label: 'Default' };
 }
 
-// ========== CARGA DE ARCHIVOS ==========
-document.getElementById('file-loader').addEventListener('change', async function(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const ext = file.name.toLowerCase();
-  const reader = new FileReader();
+// ========== ALGORITMO DE ORDENAMIENTO ==========
+async function calcularOrden() {
+  if (tasks.length === 0) return [];
+  if (tasks.length === 1) return [0];
   
-  reader.onload = async function(evt) {
-    let rawTasks = [];
-    let detectedMode = false;
-    
+  const origen = getOrigin();
+  const puntos = [{ lat: origen.lat, lon: origen.lon }, ...tasks];
+  const n = puntos.length;
+  
+  let usarMatriz = false;
+  if (!modoLectura && tasks.length <= 150) {
+    usarMatriz = true;
+  }
+  
+  let matrix = null;
+  if (usarMatriz) {
     try {
-      if (ext.endsWith('.gpx')) {
-        rawTasks = parseGPX(evt.target.result);
-        detectedMode = false;
-      } 
-      else if (ext.endsWith('.txt') || ext.endsWith('.csv')) {
-        let content = evt.target.result;
-        content = content.replace(/^\uFEFF/, '');
-        if (content.includes('Grid') && content.includes('Lat/Long') && content.includes('Waypoint')) {
-          rawTasks = parseLecturasTXT(content);
-          detectedMode = true;
-        } else if (content.includes('Número\tSuministro') || content.includes('Número;Suministro') || content.includes('Número,Suministro')) {
-          rawTasks = parseOrdenesTXT(content);
-          detectedMode = false;
-        } else {
-          const lecturas = parseLecturasTXT(content);
-          if (lecturas.length > 0) {
-            rawTasks = lecturas;
-            detectedMode = true;
-          } else {
-            rawTasks = parseOrdenesTXT(content);
-            detectedMode = false;
+      const coords = puntos.map(p => `${p.lon},${p.lat}`).join(';');
+      const url = `${OSRM_HOST}/table/v1/${perfilRuteo}/${coords}?annotations=distance`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.code === 'Ok' && json.distances) {
+          matrix = json.distances;
+          console.log('✅ Matriz OSRM obtenida');
+        }
+      }
+    } catch (e) {
+      console.warn('OSRM table falló, usando Haversine:', e);
+    }
+  }
+  
+  if (!matrix) {
+    console.log('📏 Usando Haversine para el orden');
+    return greedyHaversine(puntos);
+  }
+  return greedyMatrix(matrix);
+}
+
+function greedyHaversine(puntos) {
+  const n = puntos.length;
+  const visited = new Array(n).fill(false);
+  visited[0] = true;
+  let current = 0;
+  const order = [0];
+  for (let step = 1; step < n; step++) {
+    let best = -1, bestD = Infinity;
+    for (let j = 1; j < n; j++) {
+      if (visited[j]) continue;
+      const d = haversine(puntos[current].lat, puntos[current].lon, puntos[j].lat, puntos[j].lon);
+      if (d < bestD) { bestD = d; best = j; }
+    }
+    if (best === -1) {
+      for (let j = 1; j < n; j++) if (!visited[j]) { best = j; break; }
+    }
+    visited[best] = true;
+    order.push(best);
+    current = best;
+  }
+  return order.slice(1).map(i => i - 1);
+}
+
+function greedyMatrix(matrix) {
+  const n = matrix.length;
+  const visited = new Array(n).fill(false);
+  visited[0] = true;
+  let current = 0;
+  const order = [0];
+  for (let step = 1; step < n; step++) {
+    let best = -1, bestD = Infinity;
+    for (let j = 1; j < n; j++) {
+      if (visited[j]) continue;
+      const d = matrix[current][j];
+      if (d !== null && d !== undefined && d < bestD) { bestD = d; best = j; }
+    }
+    if (best === -1) {
+      for (let j = 1; j < n; j++) if (!visited[j]) { best = j; break; }
+    }
+    visited[best] = true;
+    order.push(best);
+    current = best;
+  }
+  return order.slice(1).map(i => i - 1);
+}
+
+// ========== TRAZAR RUTA COMPLETA ==========
+async function trazarRuta() {
+  if (navigationLine) { map.removeLayer(navigationLine); navigationLine = null; }
+  if (orden.length < 2) return;
+  
+  const origen = getOrigin();
+  const puntos = [{ lat: origen.lat, lon: origen.lon }];
+  for (const idx of orden) {
+    puntos.push({ lat: tasks[idx].lat, lon: tasks[idx].lon });
+  }
+  
+  const segmentSize = 100;
+  let allCoords = [];
+  
+  for (let i = 0; i < puntos.length - 1; i += segmentSize) {
+    const end = Math.min(i + segmentSize + 1, puntos.length);
+    const segment = puntos.slice(i, end);
+    const coords = segment.map(p => `${p.lon},${p.lat}`).join(';');
+    const url = `${OSRM_HOST}/route/v1/${perfilRuteo}/${coords}?overview=full&geometries=geojson&continue_straight=false`;
+    try {
+      const res = await fetch(url);
+      if (res.ok) {
+        const json = await res.json();
+        if (json.code === 'Ok' && json.routes && json.routes.length > 0) {
+          const geom = json.routes[0].geometry;
+          if (geom && geom.coordinates) {
+            const coordsArray = geom.coordinates.map(c => [c[1], c[0]]);
+            allCoords = allCoords.concat(coordsArray);
           }
         }
       }
-      else if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) {
-        const data = new Uint8Array(evt.target.result);
-        const wb = XLSX.read(data, { type: 'array' });
-        const matrix = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
-        rawTasks = parseMatrix(matrix);
-        detectedMode = false;
-      }
-    } catch (err) { 
-      alert("Error al procesar archivo: " + err.message); 
-      console.error(err);
-      return; 
+    } catch (e) {
+      console.warn('Error trazando segmento:', e);
     }
-    
-    console.log("Tareas parseadas (sin ordenar):", rawTasks.length);
-    if (rawTasks.length) {
-      modoLectura = detectedMode;
-      // 🔥 APLICAR ORDEN POR PROXIMIDAD GEOGRÁFICA (VECINO MÁS CERCANO)
-      rawTasks = orderByNearestNeighbor(rawTasks);
-      console.log("Tareas ordenadas por proximidad geográfica");
-      
-      tasks = rawTasks;
-      tasks.forEach(t => {
-        if (!t.status) t.status = 'Pendiente';
-        if (!t.prioridad) t.prioridad = modoLectura ? 'Sin' : 'Media';
-        if (!t.tipoTarea) t.tipoTarea = modoLectura ? 'Lectura' : 'Orden';
-      });
-      currentRouteId = "ot_progress_" + file.name.replace(/[^a-zA-Z0-9]/g, '_') + (modoLectura ? '_lect' : '_ord');
-      loadProgress();
-      saveOfflineTasks();
-      document.getElementById('empty-state').style.display = 'none';
-      document.getElementById('hud-panel').style.display = 'flex';
-      document.getElementById('modalTitle').innerHTML = modoLectura ? 
-        '📋 Lista de Lecturas <span id="modalTotal">(0)</span>' : 
-        '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
-      await findNextActiveTask();
-      fitMapToFeatures();
-    } else {
-      alert("No se encontraron tareas con coordenadas válidas en el archivo.");
-    }
-  };
-  
-  if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) {
-    reader.readAsArrayBuffer(file);
-  } else {
-    reader.readAsText(file, 'ISO-8859-1');
   }
-});
+  
+  if (allCoords.length > 1) {
+    navigationLine = L.polyline(allCoords, { color: '#4fd8a4', weight: 4, opacity: 0.7 }).addTo(map);
+  }
+}
 
-// ========== PARSER: GPX ==========
+// ========== REORDENAR ==========
+async function reorderTasks() {
+  if (tasks.length === 0) return;
+  const indicator = document.getElementById('calculating-indicator');
+  indicator.textContent = '⏳ Calculando ruta óptima...';
+  indicator.style.display = 'block';
+  
+  try {
+    const nuevoOrden = await calcularOrden();
+    if (nuevoOrden.length === tasks.length) {
+      orden = nuevoOrden;
+      saveFullState();
+      renderTasks();
+      updateNavigation();
+      await trazarRuta();
+      updateTotalCounter();
+    }
+  } catch (e) {
+    console.error('Error reordenando:', e);
+  }
+  
+  indicator.style.display = 'none';
+}
+
+// ========== RENDERIZADO DE MARCADORES ==========
+function renderTasks() {
+  markersGroup.clearLayers();
+  if (orden.length === 0) {
+    for (let i = 0; i < tasks.length; i++) orden.push(i);
+  }
+
+  tasks.forEach((t, idx) => {
+    const pos = orden.indexOf(idx);
+    const orderNumber = pos !== -1 ? pos + 1 : '?';
+    const isActive = idx === activeTaskIndex;
+    const color = statusColor(t.status);
+    
+    const size = isActive ? 34 : 22;
+    const fontSize = isActive ? 13 : 9;
+    const borderWidth = isActive ? 3 : 1.5;
+    const opacity = (t.status === 'Completada' || t.status === 'Rechazada') ? 0.5 : 1;
+
+    const html = `<div style="background:${color}; border-radius:50%; width:${size}px; height:${size}px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:${fontSize}px; border:${borderWidth}px solid #fff; opacity:${opacity};">${orderNumber}</div>`;
+
+    const icon = L.divIcon({ html, className: '', iconSize: [size, size], iconAnchor: [size/2, size/2] });
+    const marker = L.marker([t.lat, t.lon], { icon, zIndexOffset: isActive ? 500 : 0 });
+
+    const canReopen = (t.status === 'Completada' || t.status === 'Rechazada');
+    const reopenBtn = canReopen ? `<button class="popup-btn" style="background:#f97316" onclick="event.stopPropagation();reopenTask(${idx})">↩ Reabrir</button>` : '';
+    const irBtn = (t.status === 'Pendiente' || t.status === 'EnProgreso') ? `<button class="popup-btn" style="background:#4285f4" onclick="event.stopPropagation();irATarea(${idx})">🚗 IR</button>` : '';
+
+    const popupHtml = `
+      <div class="popup-nav-title">${modoLectura ? 'LECTURA' : 'OT'}: #${orderNumber} - ${t.numeroOT} <span style="color:${color}">[${t.status}]</span></div>
+      <div class="popup-nav-text">
+        <b>Tipo:</b> ${t.tipoTarea} | <b>Prioridad:</b> ${t.prioridad}<br>
+        <b>Sum:</b> ${t.suministro}<br><b>Dir:</b> ${t.direccion}<br>
+        ${t.titular ? '<b>Titular:</b> '+t.titular+'<br>' : ''}
+        ${t.observaciones ? '<i>'+t.observaciones+'</i>' : ''}
+      </div>
+      <div class="popup-btn-row">${irBtn}${reopenBtn}</div>`;
+    marker.bindPopup(popupHtml, { maxWidth: 280, autoClose: false, closeOnClick: false });
+
+    marker.on('click', () => {
+      activeTaskIndex = idx;
+      updateNavigation();
+      renderTasks();
+      setTimeout(() => {
+        const layers = markersGroup.getLayers();
+        const target = layers.find(l => {
+          const ll = l.getLatLng();
+          return ll && ll.lat === t.lat && ll.lng === t.lon;
+        });
+        if (target) target.openPopup();
+      }, 100);
+    });
+    markersGroup.addLayer(marker);
+  });
+  
+  updateTotalCounter();
+}
+
+// ========== PARSERS (completos) ==========
 function parseGPX(xmlText) {
   const xml = new DOMParser().parseFromString(xmlText, "text/xml");
   const wpts = xml.getElementsByTagName("wpt");
@@ -688,15 +869,12 @@ function parseGPX(xmlText) {
   }).filter(t => !isNaN(t.lat) && !isNaN(t.lon));
 }
 
-// ========== PARSER: TXT ÓRDENES ==========
 function parseOrdenesTXT(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   if (lines.length < 2) return [];
-  
   let sep = '\t';
   if (lines[0].includes(';')) sep = ';';
   else if (lines[0].includes(',')) sep = ',';
-  
   const headers = lines[0].split(sep).map(h => h.trim());
   const possibleNames = ['numero', 'número', 'nro', 'ot'];
   const idxNum = headers.findIndex(h => {
@@ -704,7 +882,6 @@ function parseOrdenesTXT(text) {
     return possibleNames.some(name => clean === name);
   });
   const finalIdxNum = idxNum !== -1 ? idxNum : 0;
-  
   const idxSum = headers.findIndex(h => /Suministro|Sum/i.test(h));
   const idxDir = headers.findIndex(h => /Direccion|Dirección|Domicilio/i.test(h));
   const idxTit = headers.findIndex(h => /Titular|Cliente/i.test(h));
@@ -734,7 +911,6 @@ function parseOrdenesTXT(text) {
     else if (/Progreso|En Curso/i.test(estadoVal)) status = 'EnProgreso';
     
     const numeroOT = (finalIdxNum < cols.length && cols[finalIdxNum]) ? cols[finalIdxNum] : `OT-${i}`;
-    
     tasks.push({
       lat: coords.lat,
       lon: coords.lon,
@@ -751,7 +927,6 @@ function parseOrdenesTXT(text) {
   return tasks;
 }
 
-// ========== PARSER: TXT LECTURAS ==========
 function parseLecturasTXT(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   let headerLine = null;
@@ -822,18 +997,6 @@ function parseLecturasTXT(text) {
   return tasks;
 }
 
-// ========== CONVERSIÓN DE COORDENADAS ==========
-function convertGarmin(str) {
-  if (!str || typeof str !== 'string') return null;
-  const cleaned = str.replace(/[°º?']/g, ' ').trim();
-  const m = cleaned.match(/([NS])\s*(\d+)\s+([\d.]+)\s+([EW])\s*(\d+)\s+([\d.]+)/i);
-  if (!m) return null;
-  const lat = (+m[2] + +m[3]/60) * (m[1].toUpperCase() === 'S' ? -1 : 1);
-  const lon = (+m[5] + +m[6]/60) * (m[4].toUpperCase() === 'W' ? -1 : 1);
-  return (isNaN(lat) || isNaN(lon)) ? null : {lat, lon};
-}
-
-// ========== PARSEADOR DE MATRIZ (Excel) ==========
 function parseMatrix(matrix) {
   if (!matrix.length) return [];
   const headerIdx = matrix.findIndex(r => r.some(c => /num|orden|ot|tarea|suministro/i.test(String(c))));
@@ -878,79 +1041,27 @@ function parseMatrix(matrix) {
   return tasks;
 }
 
-// ========== UTILIDADES ==========
-function getColorForType() { return modoLectura ? 'var(--color-lectura)' : 'var(--color-orden)'; }
+function convertGarmin(str) {
+  if (!str || typeof str !== 'string') return null;
+  const cleaned = str.replace(/[°º?']/g, ' ').trim();
+  const m = cleaned.match(/([NS])\s*(\d+)\s+([\d.]+)\s+([EW])\s*(\d+)\s+([\d.]+)/i);
+  if (!m) return null;
+  const lat = (+m[2] + +m[3]/60) * (m[1].toUpperCase() === 'S' ? -1 : 1);
+  const lon = (+m[5] + +m[6]/60) * (m[4].toUpperCase() === 'W' ? -1 : 1);
+  return (isNaN(lat) || isNaN(lon)) ? null : {lat, lon};
+}
+
+// ========== FUNCIONES DE ESTADO ==========
 function statusColor(s) {
   return {Pendiente:'#3b82f6', EnProgreso:'#f59e0b', Completada:'#22c55e', Rechazada:'#6b7280'}[s] || '#3b82f6';
 }
-function getTaskOrder(task) {
-  // Ahora el orden es el índice del array, ya que tasks está ordenado geográficamente
-  return tasks.indexOf(task) + 1;
-}
 
-// ========== RENDERIZADO DE MARCADORES ==========
-function renderTasks() {
-  markersGroup.clearLayers();
-
-  tasks.forEach((t, idx) => {
-    const isActive = idx === activeTaskIndex;
-    const color = statusColor(t.status);
-    const orderNumber = idx + 1; // El orden es el índice en el array
-
-    const size = isActive ? 34 : 22;
-    const fontSize = isActive ? 13 : 9;
-    const borderWidth = isActive ? 3 : 1.5;
-    const opacity = (t.status === 'Completada' || t.status === 'Rechazada') ? 0.5 : 1;
-
-    const html = `<div style="background:${color}; border-radius:50%; width:${size}px; height:${size}px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:bold; font-size:${fontSize}px; border:${borderWidth}px solid #fff; opacity:${opacity};">${orderNumber}</div>`;
-
-    const icon = L.divIcon({ html, className: '', iconSize: [size, size], iconAnchor: [size/2, size/2] });
-    const marker = L.marker([t.lat, t.lon], { icon, zIndexOffset: isActive ? 500 : 0 });
-
-    const canReopen = (t.status === 'Completada' || t.status === 'Rechazada');
-    const reopenBtn = canReopen ? `<button class="popup-btn" style="background:#f97316" onclick="event.stopPropagation();reopenTask(${idx})">↩ Reabrir</button>` : '';
-    const irBtn = (t.status === 'Pendiente' || t.status === 'EnProgreso') ? `<button class="popup-btn" style="background:#4285f4" onclick="event.stopPropagation();irATarea(${idx})">🚗 IR</button>` : '';
-
-    const popupHtml = `
-      <div class="popup-nav-title">${modoLectura ? 'LECTURA' : 'OT'}: #${orderNumber} - ${t.numeroOT} <span style="color:${color}">[${t.status}]</span></div>
-      <div class="popup-nav-text">
-        <b>Tipo:</b> ${t.tipoTarea} | <b>Prioridad:</b> ${t.prioridad}<br>
-        <b>Sum:</b> ${t.suministro}<br><b>Dir:</b> ${t.direccion}<br>
-        ${t.titular ? '<b>Titular:</b> '+t.titular+'<br>' : ''}
-        ${t.observaciones ? '<i>'+t.observaciones+'</i>' : ''}
-      </div>
-      <div class="popup-btn-row">${irBtn}${reopenBtn}</div>`;
-    marker.bindPopup(popupHtml, { maxWidth: 280, autoClose: false, closeOnClick: false });
-
-    marker.on('click', () => {
-      activeTaskIndex = idx;
-      updateNavigation();
-      renderTasks();
-      setTimeout(() => {
-        const layers = markersGroup.getLayers();
-        const target = layers.find(l => {
-          const ll = l.getLatLng();
-          return ll && ll.lat === t.lat && ll.lng === t.lon;
-        });
-        if (target) target.openPopup();
-      }, 100);
-    });
-    markersGroup.addLayer(marker);
-  });
-  updateTotalCounter();
-}
-
-// ========== BOTÓN "IR" Y FUNCIONES DE ESTADO ==========
-function navigateDirectly(lat, lon) {
-  const url = `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${lat},${lon}&dir_action=navigate`;
-  window.open(url, '_blank');
-}
 function irATarea(index) {
   if (index < 0 || index >= tasks.length) return;
   if (tasks[index].status === 'Pendiente' || tasks[index].status === 'EnProgreso') {
     tasks[index].status = 'EnProgreso';
     saveProgress();
-    saveOfflineTasks();
+    saveFullState();
     activeTaskIndex = index;
     updateNavigation();
     renderTasks();
@@ -958,118 +1069,55 @@ function irATarea(index) {
   }
 }
 function irATareaActiva() { irATarea(activeTaskIndex); }
-
-// ========== REORDENAR POR PROXIMIDAD GEOGRÁFICA ==========
-async function reorderTasks() {
-  const indicator = document.getElementById('calculating-indicator');
-  if (indicator) indicator.style.display = 'block';
-  
-  // Aplicar el algoritmo de vecino más cercano al array actual
-  tasks = orderByNearestNeighbor(tasks);
-  
-  // Guardar el nuevo orden en persistencia
-  saveOfflineTasks();
-  
-  // Recalcular la tarea activa (la más cercana al usuario, o la primera si no hay GPS)
-  await findNextActiveTask();
-  
-  // Refrescar vista
-  renderTasks();
-  updateNavigation();
-  
-  if (indicator) indicator.style.display = 'none';
+function navigateDirectly(lat, lon) {
+  const url = `https://www.google.com/maps/dir/?api=1&travelmode=driving&destination=${lat},${lon}&dir_action=navigate`;
+  window.open(url, '_blank');
 }
 
-// ========== SELECCIÓN DE TAREA ACTIVA ==========
-async function findNextActiveTask() {
-  const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso');
-  if (!pendientes.length) { activeTaskIndex = -1; updateNavigation(); renderTasks(); return; }
-  if (!userLatLng || pendientes.length === 1) { setActiveByStraightLine(pendientes); updateNavigation(); renderTasks(); return; }
-  
-  try {
-    activeTaskIndex = USE_GOOGLE_TRAFFIC
-      ? await findClosestByGoogleTraffic(userLatLng, pendientes)
-      : await findClosestByOSRMTable(userLatLng, pendientes);
-  } catch (e) { 
-    console.warn('Error selección, usando línea recta', e); 
-    setActiveByStraightLine(pendientes); 
-  }
-  updateNavigation();
-  renderTasks();
-}
-
-async function findClosestByGoogleTraffic(origin, candidates) {
-  const origins = `${origin[0]},${origin[1]}`;
-  const destinations = candidates.map(t => `${t.lat},${t.lon}`).join('|');
-  const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${origins}&destinations=${destinations}&departure_time=now&traffic_model=best_guess&key=${GOOGLE_MAPS_API_KEY}`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (data.status !== 'OK') throw new Error('Google Matrix falló');
-  const elements = data.rows[0].elements;
-  let bestIdx = -1, minDuration = Infinity;
-  candidates.forEach((t, i) => {
-    if (elements[i].status === 'OK' && elements[i].duration_in_traffic) {
-      const sec = elements[i].duration_in_traffic.value;
-      if (sec < minDuration) { minDuration = sec; bestIdx = tasks.indexOf(t); }
-    }
-  });
-  return bestIdx !== -1 ? bestIdx : tasks.indexOf(candidates[0]);
-}
-
-async function findClosestByOSRMTable(origin, candidates) {
-  const destCoords = candidates.map(d => `${d.lon},${d.lat}`).join(';');
-  const url = `https://router.project-osrm.org/table/v1/driving/${origin[1]},${origin[0]};${destCoords}?sources=0&annotations=distance`;
-  const res = await fetch(url);
-  const data = await res.json();
-  if (data.code !== 'Ok') throw new Error('OSRM Table falló');
-  const distances = data.distances[0];
-  let bestIdx = -1, minDist = Infinity;
-  candidates.forEach((t, i) => {
-    if (distances[i] !== null && distances[i] < minDist) { minDist = distances[i]; bestIdx = tasks.indexOf(t); }
-  });
-  return bestIdx !== -1 ? bestIdx : tasks.indexOf(candidates[0]);
-}
-
-function setActiveByStraightLine(pendientes) {
-  if (userLatLng) {
-    let minD = Infinity, idx = -1;
-    pendientes.forEach(t => {
-      const d = distSq({lat: userLatLng[0], lon: userLatLng[1]}, t);
-      if (d < minD) { minD = d; idx = tasks.indexOf(t); }
-    });
-    activeTaskIndex = idx;
-  } else activeTaskIndex = tasks.indexOf(pendientes[0]);
-}
-
-// ========== CAMBIO DE ESTADOS ==========
 async function changeTaskStatus(newStatus) {
   if (activeTaskIndex < 0 || activeTaskIndex >= tasks.length) return;
   tasks[activeTaskIndex].status = newStatus;
   saveProgress();
-  saveOfflineTasks();
+  saveFullState();
   renderTasks();
-  if (newStatus === 'Completada' || newStatus === 'Rechazada') await findNextActiveTask();
-  else updateNavigation();
+  if (newStatus === 'Completada' || newStatus === 'Rechazada') {
+    const pos = orden.indexOf(activeTaskIndex);
+    let nextIdx = -1;
+    for (let i = pos + 1; i < orden.length; i++) {
+      const idx = orden[i];
+      if (tasks[idx].status === 'Pendiente' || tasks[idx].status === 'EnProgreso') {
+        nextIdx = idx;
+        break;
+      }
+    }
+    if (nextIdx !== -1) {
+      activeTaskIndex = nextIdx;
+    } else {
+      activeTaskIndex = -1;
+    }
+    updateNavigation();
+  } else {
+    updateNavigation();
+  }
 }
 async function reopenTask(index) {
   if (index < 0 || index >= tasks.length) return;
   if (tasks[index].status === 'Completada' || tasks[index].status === 'Rechazada') {
     tasks[index].status = 'Pendiente';
     saveProgress();
-    saveOfflineTasks();
+    saveFullState();
     activeTaskIndex = index;
     updateNavigation();
     renderTasks();
   }
 }
 
-// ========== ACTUALIZACIÓN DEL HUD ==========
 function updateNavigation() {
   const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso').length;
   document.getElementById('hud-panel').style.display = tasks.length ? 'flex' : 'none';
   const actionsContainer = document.getElementById('btn-actions-container');
   
-  if (activeTaskIndex === -1 || (tasks.length > 0 && pendientes === 0 && activeTaskIndex === -1)) {
+  if (activeTaskIndex === -1 || pendientes === 0) {
     document.getElementById('lbl-ot').textContent = "Sin tareas pendientes";
     document.getElementById('lbl-detalles').textContent = "";
     document.getElementById('lbl-distance').textContent = "✓";
@@ -1081,7 +1129,8 @@ function updateNavigation() {
   }
   
   const t = tasks[activeTaskIndex];
-  const orderNumber = activeTaskIndex + 1; // Orden según índice en el array ordenado
+  const pos = orden.indexOf(activeTaskIndex);
+  const orderNumber = pos !== -1 ? pos + 1 : '?';
   
   document.getElementById('lbl-priority').textContent = t.prioridad || 'Sin';
   document.getElementById('lbl-priority').className = `badge-priority priority-${t.prioridad || 'Sin'}`;
@@ -1090,7 +1139,6 @@ function updateNavigation() {
   
   const prefix = modoLectura ? 'LECTURA' : 'OT';
   document.getElementById('lbl-ot').textContent = `${prefix}: #${orderNumber} - ${t.numeroOT}`;
-  
   document.getElementById('lbl-detalles').textContent = `Sum: ${t.suministro} | Dir: ${t.direccion}${t.titular?' | '+t.titular:''}`;
   document.getElementById('lbl-tipo-tarea').textContent = `Tipo: ${t.tipoTarea}${t.observaciones?' - '+t.observaciones:''}`;
   
@@ -1114,108 +1162,157 @@ function updateNavigation() {
   actionsContainer.innerHTML = actionButtons;
   
   if (userLatLng) {
-    if (USE_GOOGLE_TRAFFIC) googleDirectionsETA(t);
-    else osrmRoute(t);
-  } else document.getElementById('lbl-distance').textContent = '--';
-}
-
-// ========== RUTAS Y DISTANCIAS ==========
-function osrmRoute(t) {
-  const url = `https://router.project-osrm.org/route/v1/driving/${userLatLng[1]},${userLatLng[0]};${t.lon},${t.lat}?overview=full&geometries=geojson`;
-  fetch(url).then(r => r.json()).then(data => {
-    if (data.routes?.length) {
-      drawLine(data.routes[0].geometry.coordinates.map(c => [c[1], c[0]]), '#ff3b30');
-      const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
-      document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
-    } else fallbackLine(t);
-  }).catch(() => fallbackLine(t));
-}
-function googleDirectionsETA(t) {
-  const origin = `${userLatLng[0]},${userLatLng[1]}`;
-  const dest = `${t.lat},${t.lon}`;
-  const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${dest}&departure_time=now&traffic_model=best_guess&key=${GOOGLE_MAPS_API_KEY}`;
-  fetch(url).then(r => r.json()).then(data => {
-    if (data.routes?.length) {
-      const leg = data.routes[0].legs[0];
-      document.getElementById('lbl-distance').textContent = leg.duration_in_traffic?.text || leg.duration.text;
-      if (data.routes[0].overview_polyline) drawLine(decodePolyline(data.routes[0].overview_polyline.points), '#4285f4');
-    } else fallbackLine(t);
-  }).catch(() => osrmRoute(t));
-}
-function decodePolyline(encoded) {
-  let points = [], index = 0, lat = 0, lng = 0;
-  while (index < encoded.length) {
-    let b, shift = 0, result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lat += (result & 1) ? ~(result >> 1) : (result >> 1);
-    shift = 0; result = 0;
-    do { b = encoded.charCodeAt(index++) - 63; result |= (b & 0x1f) << shift; shift += 5; } while (b >= 0x20);
-    lng += (result & 1) ? ~(result >> 1) : (result >> 1);
-    points.push([lat / 1e5, lng / 1e5]);
-  }
-  return points;
-}
-function drawLine(coords, color) {
-  if (navigationLine) {
-    navigationLine.setLatLngs(coords);
-    navigationLine.setStyle({ color, weight: 5 });
+    const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
+    document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
   } else {
-    navigationLine = L.polyline(coords, { color, weight: 5, opacity: 0.85 }).addTo(map);
+    document.getElementById('lbl-distance').textContent = '--';
   }
-}
-function fallbackLine(t) {
-  if (!userLatLng) return;
-  drawLine([userLatLng, [t.lat, t.lon]], '#f97316');
-}
-function centerOnUser() { if (userLatLng) map.setView(userLatLng, 17, { animate: true }); }
-function fitMapToFeatures() {
-  const pts = tasks.map(t => [t.lat, t.lon]);
-  if (userLatLng) pts.push(userLatLng);
-  if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 17 });
 }
 
 // ========== PERSISTENCIA ==========
-function saveProgress() {
-  if (!currentRouteId) return;
-  try { 
-    const statuses = tasks.map(t => t.status);
-    localStorage.setItem(currentRouteId, JSON.stringify(statuses)); 
+function saveFullState() {
+  try {
+    const data = {
+      tasks,
+      orden,
+      modoLectura,
+      perfilRuteo,
+      origenPersonalizado,
+      activeTaskIndex
+    };
+    localStorage.setItem('ec_sapem_full_state', JSON.stringify(data));
   } catch(e) {}
 }
+
+function loadFullState() {
+  try {
+    const raw = localStorage.getItem('ec_sapem_full_state');
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (data.tasks && data.tasks.length) {
+      tasks = data.tasks;
+      orden = data.orden || [];
+      modoLectura = data.modoLectura || false;
+      perfilRuteo = data.perfilRuteo || 'driving';
+      origenPersonalizado = data.origenPersonalizado || null;
+      activeTaskIndex = data.activeTaskIndex !== undefined ? data.activeTaskIndex : -1;
+      
+      document.getElementById('profile-select').value = perfilRuteo;
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('hud-panel').style.display = 'flex';
+      document.getElementById('modalTitle').innerHTML = modoLectura ? 
+        '📋 Lista de Lecturas <span id="modalTotal">(0)</span>' : 
+        '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
+      
+      renderTasks();
+      updateNavigation();
+      trazarRuta();
+      fitMapToFeatures();
+    }
+  } catch(e) { console.warn('Error cargando estado:', e); }
+}
+
+function saveProgress() {
+  if (!currentRouteId) return;
+  try {
+    const statusMap = {};
+    tasks.forEach(t => {
+      if (t.numeroOT) statusMap[t.numeroOT] = t.status;
+    });
+    localStorage.setItem(currentRouteId, JSON.stringify(statusMap));
+  } catch(e) {}
+}
+
 function loadProgress() {
   if (!currentRouteId) return;
   try {
-    const saved = JSON.parse(localStorage.getItem(currentRouteId));
-    if (saved) tasks.forEach((t, i) => { if (saved[i]) t.status = saved[i]; });
+    const statusMap = JSON.parse(localStorage.getItem(currentRouteId));
+    if (statusMap) {
+      tasks.forEach(t => {
+        if (statusMap[t.numeroOT]) t.status = statusMap[t.numeroOT];
+      });
+    }
   } catch(e) {}
 }
-function saveOfflineTasks() {
-  try {
-    const data = { tasks, modoLectura };
-    localStorage.setItem('offline_tasks', JSON.stringify(data));
-  } catch(e) {}
-}
-function loadOfflineTasks() {
-  if (tasks.length > 0) return;
-  const saved = localStorage.getItem('offline_tasks');
-  if (saved) {
+
+// ========== CARGA DE ARCHIVOS ==========
+document.getElementById('file-loader').addEventListener('change', async function(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const ext = file.name.toLowerCase();
+  const reader = new FileReader();
+  
+  reader.onload = async function(evt) {
+    let rawTasks = [];
+    let detectedMode = false;
+    
     try {
-      const data = JSON.parse(saved);
-      tasks = data.tasks || [];
-      modoLectura = data.modoLectura || false;
-      if (tasks.length) {
-        document.getElementById('empty-state').style.display = 'none';
-        document.getElementById('hud-panel').style.display = 'flex';
-        document.getElementById('modalTitle').innerHTML = modoLectura ? 
-          '📋 Lista de Lecturas <span id="modalTotal">(0)</span>' : 
-          '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
-        renderTasks();
-        updateNavigation();
-        fitMapToFeatures();
+      if (ext.endsWith('.gpx')) {
+        rawTasks = parseGPX(evt.target.result);
+        detectedMode = false;
+      } 
+      else if (ext.endsWith('.txt') || ext.endsWith('.csv')) {
+        let content = evt.target.result;
+        content = content.replace(/^\uFEFF/, '');
+        if (content.includes('Grid') && content.includes('Lat/Long') && content.includes('Waypoint')) {
+          rawTasks = parseLecturasTXT(content);
+          detectedMode = true;
+        } else {
+          rawTasks = parseOrdenesTXT(content);
+          detectedMode = false;
+        }
       }
-    } catch(e) {}
+      else if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) {
+        const data = new Uint8Array(evt.target.result);
+        const wb = XLSX.read(data, { type: 'array' });
+        const matrix = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
+        rawTasks = parseMatrix(matrix);
+        detectedMode = false;
+      }
+    } catch (err) { 
+      alert("Error al procesar archivo: " + err.message); 
+      return; 
+    }
+    
+    if (rawTasks.length) {
+      modoLectura = detectedMode;
+      tasks = rawTasks;
+      tasks.forEach(t => {
+        if (!t.status) t.status = 'Pendiente';
+        if (!t.prioridad) t.prioridad = modoLectura ? 'Sin' : 'Media';
+        if (!t.tipoTarea) t.tipoTarea = modoLectura ? 'Lectura' : 'Orden';
+      });
+      
+      perfilRuteo = modoLectura ? 'foot' : 'driving';
+      document.getElementById('profile-select').value = perfilRuteo;
+      
+      origenPersonalizado = null;
+      
+      currentRouteId = "ot_progress_" + file.name.replace(/[^a-zA-Z0-9]/g, '_') + (modoLectura ? '_lect' : '_ord');
+      loadProgress();
+      
+      document.getElementById('empty-state').style.display = 'none';
+      document.getElementById('hud-panel').style.display = 'flex';
+      document.getElementById('modalTitle').innerHTML = modoLectura ? 
+        '📋 Lista de Lecturas <span id="modalTotal">(0)</span>' : 
+        '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
+      
+      orden = [];
+      await reorderTasks();
+      fitMapToFeatures();
+    } else {
+      alert("No se encontraron tareas con coordenadas válidas.");
+    }
+  };
+  
+  if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) {
+    reader.readAsArrayBuffer(file);
+  } else {
+    reader.readAsText(file, 'UTF-8');
   }
-}
+});
+
+// ========== UTILIDADES ==========
 function haversine(lat1, lon1, lat2, lon2) {
   const R = 6371e3, toRad = d => d * Math.PI / 180;
   const dLat = toRad(lat2 - lat1), dLon = toRad(lon2 - lon1);
@@ -1223,7 +1320,15 @@ function haversine(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-// ========== FUNCIONES DEL LISTADO MODAL ==========
+function centerOnUser() { if (userLatLng) map.setView(userLatLng, 17, { animate: true }); }
+
+function fitMapToFeatures() {
+  const pts = tasks.map(t => [t.lat, t.lon]);
+  if (userLatLng) pts.push(userLatLng);
+  if (pts.length) map.fitBounds(L.latLngBounds(pts), { padding: [50, 50], maxZoom: 17 });
+}
+
+// ========== LISTADO MODAL ==========
 function updateTotalCounter() {
     const total = tasks.length;
     document.getElementById('totalCount').textContent = total;
@@ -1244,24 +1349,25 @@ function closeModalOutside(event) {
 function renderTaskList() {
     const container = document.getElementById('taskListContainer');
     if (!tasks.length) {
-        container.innerHTML = `<div style="text-align:center; padding:40px 20px; color: var(--text-muted);"><div style="font-size:40px; margin-bottom:12px;">📭</div><p>No hay tareas cargadas</p><p style="font-size:11px; margin-top:8px;">Cargá un archivo para comenzar</p></div>`;
+        container.innerHTML = `<div style="text-align:center; padding:40px 20px; color: var(--text-muted);"><div style="font-size:40px; margin-bottom:12px;">📭</div><p>No hay tareas cargadas</p></div>`;
         return;
     }
-    // El array ya está ordenado geográficamente, usamos ese orden
     const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-    const filtered = tasks.filter(t => 
-        t.numeroOT.toLowerCase().includes(searchTerm) ||
-        t.direccion.toLowerCase().includes(searchTerm) ||
-        t.suministro.toLowerCase().includes(searchTerm)
-    );
+    const filtered = tasks.filter((t, idx) => {
+      return t.numeroOT.toLowerCase().includes(searchTerm) ||
+             t.direccion.toLowerCase().includes(searchTerm) ||
+             t.suministro.toLowerCase().includes(searchTerm);
+    });
     if (!filtered.length) {
-        container.innerHTML = `<div style="text-align:center; padding:30px 20px; color: var(--text-muted);"><p>🔍 No se encontraron tareas</p><p style="font-size:11px; margin-top:8px;">Probá con otra búsqueda</p></div>`;
+        container.innerHTML = `<div style="text-align:center; padding:30px 20px; color: var(--text-muted);"><p>🔍 No se encontraron tareas</p></div>`;
         return;
     }
     let html = '';
-    filtered.forEach((t, index) => {
-        const originalIdx = tasks.indexOf(t);
-        const isActive = originalIdx === activeTaskIndex;
+    filtered.forEach((t) => {
+        const idx = tasks.indexOf(t);
+        const pos = orden.indexOf(idx);
+        const orderNumber = pos !== -1 ? pos + 1 : '?';
+        const isActive = idx === activeTaskIndex;
         const isPending = t.status === 'Pendiente' || t.status === 'EnProgreso';
         const statusClass = t.status.toLowerCase().replace(' ', '');
         const statusEmoji = t.status === 'Pendiente' ? '📌' : t.status === 'EnProgreso' ? '🔄' : t.status === 'Completada' ? '✅' : '❌';
@@ -1270,14 +1376,13 @@ function renderTaskList() {
             const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
             distanceText = dist >= 1000 ? `${(dist/1000).toFixed(1)}km` : `${Math.round(dist)}m`;
         }
-        const orderNumber = originalIdx + 1; // El orden es el índice en el array
         const prefix = modoLectura ? 'LECT' : 'OT';
         html += `
-            <div class="task-item ${statusClass} ${isActive ? 'active-item' : ''}" onclick="selectTaskFromList(${originalIdx})">
+            <div class="task-item ${statusClass} ${isActive ? 'active-item' : ''}" onclick="selectTaskFromList(${idx})">
                 <div class="task-row">
                     <span class="task-number">#${orderNumber}</span>
                     <span class="task-ot">${prefix} ${t.numeroOT}</span>
-                    ${isPending ? `<button class="task-btn-ir" onclick="event.stopPropagation();irATarea(${originalIdx})">🚗 IR</button>` : ''}
+                    ${isPending ? `<button class="task-btn-ir" onclick="event.stopPropagation();irATarea(${idx})">🚗 IR</button>` : ''}
                 </div>
                 <div class="task-direccion">${t.direccion || 'Sin dirección'}</div>
                 <div class="task-info">
@@ -1308,12 +1413,6 @@ function selectTaskFromList(index) {
         if (target) target.openPopup();
     }, 300);
 }
-// ========== ACTUALIZACIÓN DEL CONTADOR OFFLINE ==========
-const originalLoadOffline = loadOfflineTasks;
-loadOfflineTasks = function() {
-    originalLoadOffline();
-    updateTotalCounter();
-};
 </script>
 </body>
 </html>
