@@ -494,7 +494,7 @@ let tasks = [];              // array de objetos tarea
 let orden = [];              // array de índices (orden óptimo)
 let activeTaskIndex = -1;    // índice en tasks de la tarea activa
 let markersGroup = null;
-let navigationLine = null;   // línea de ruta completa
+let navigationLine = null;   // línea de ruta completa (SOLO UNA)
 let currentRouteId = "";
 let gpsReady = false;
 let modoLectura = false;
@@ -724,9 +724,14 @@ function greedyMatrix(matrix) {
   return order.slice(1).map(i => i - 1);
 }
 
-// ========== TRAZAR RUTA COMPLETA ==========
+// ========== TRAZAR RUTA COMPLETA (CORREGIDO) ==========
 async function trazarRuta() {
-  if (navigationLine) { map.removeLayer(navigationLine); navigationLine = null; }
+  // 🔥 Eliminar línea anterior ANTES de dibujar la nueva
+  if (navigationLine) {
+    map.removeLayer(navigationLine);
+    navigationLine = null;
+  }
+  
   if (orden.length < 2) return;
   
   const origen = getOrigin();
@@ -761,24 +766,36 @@ async function trazarRuta() {
   }
   
   if (allCoords.length > 1) {
-    navigationLine = L.polyline(allCoords, { color: '#4fd8a4', weight: 4, opacity: 0.7 }).addTo(map);
+    navigationLine = L.polyline(allCoords, { 
+      color: '#4fd8a4', 
+      weight: 4, 
+      opacity: 0.7,
+      smoothFactor: 1
+    }).addTo(map);
   }
 }
 
-// ========== REORDENAR ==========
+// ========== REORDENAR (CORREGIDO) ==========
 async function reorderTasks() {
   if (tasks.length === 0) return;
   const indicator = document.getElementById('calculating-indicator');
-  indicator.textContent = '⏳ Calculando ruta óptima...';
+  indicator.textContent = '⏳ Calculando ruta óptima... (puede tardar unos segundos)';
   indicator.style.display = 'block';
   
   try {
+    // 🔥 Limpiar línea anterior antes de recalcular
+    if (navigationLine) {
+      map.removeLayer(navigationLine);
+      navigationLine = null;
+    }
+    
     const nuevoOrden = await calcularOrden();
     if (nuevoOrden.length === tasks.length) {
       orden = nuevoOrden;
       saveFullState();
       renderTasks();
       updateNavigation();
+      // 🔥 Dibujar la nueva ruta SOLO después de tener el orden
       await trazarRuta();
       updateTotalCounter();
     }
@@ -789,7 +806,7 @@ async function reorderTasks() {
   indicator.style.display = 'none';
 }
 
-// ========== RENDERIZADO DE MARCADORES ==========
+// ========== RENDERIZADO DE MARCADORES (sin trazar ruta) ==========
 function renderTasks() {
   markersGroup.clearLayers();
   if (orden.length === 0) {
@@ -1206,7 +1223,11 @@ function loadFullState() {
       
       renderTasks();
       updateNavigation();
-      trazarRuta();
+      // 🔥 No llamar a trazarRuta aquí, se llama al reordenar o cargar archivo
+      // Pero si tenemos orden guardado, dibujamos la ruta
+      if (orden.length > 1) {
+        trazarRuta();
+      }
       fitMapToFeatures();
     }
   } catch(e) { console.warn('Error cargando estado:', e); }
@@ -1245,6 +1266,12 @@ document.getElementById('file-loader').addEventListener('change', async function
   reader.onload = async function(evt) {
     let rawTasks = [];
     let detectedMode = false;
+    
+    // 🔥 Limpiar línea anterior al cargar nuevo archivo
+    if (navigationLine) {
+      map.removeLayer(navigationLine);
+      navigationLine = null;
+    }
     
     try {
       if (ext.endsWith('.gpx')) {
@@ -1298,7 +1325,7 @@ document.getElementById('file-loader').addEventListener('change', async function
         '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
       
       orden = [];
-      await reorderTasks();
+      await reorderTasks(); // Esto ya dibuja la nueva ruta
       fitMapToFeatures();
     } else {
       alert("No se encontraron tareas con coordenadas válidas.");
