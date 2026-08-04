@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ========== VERSIÓN DE LA APLICACIÓN ==========
-const APP_VERSION = "v1.0.1";
+const APP_VERSION = "v1.0.2";
 console.log(`🚀 EC SAPEM Navegador - ${APP_VERSION}`);
 
 // ========== PWA Manifest (solo si no es file://) ==========
@@ -456,13 +456,13 @@ header {
     <!-- Botones flotantes -->
     <button class="btn-float btn-origin" id="btn-pick-origin" title="Elegir punto de partida en el mapa">📍</button>
     <button class="btn-float btn-gps-lock" onclick="centerOnUser()" title="Mi ubicación">📡</button>
-    <button class="btn-float btn-reorder" onclick="reorderTasks()" title="Reordenar por ruta real">🔄</button>
+    <button class="btn-float btn-reorder" id="btn-reorder" title="Reordenar por ruta real">🔄</button>
     <button class="btn-float btn-list" onclick="openTaskList()" id="btnOpenList">
         📋 <span id="totalCount">0</span>
     </button>
 
     <div id="calculating-indicator">⏳ Calculando ruta óptima...</div>
-    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.0.1</span></span></div>
+    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.0.2</span></span></div>
     
     <div id="empty-state">
       <div style="font-size:36px;">🗺️</div>
@@ -571,6 +571,7 @@ document.addEventListener("DOMContentLoaded", () => {
   
   document.getElementById('btn-pick-origin').addEventListener('click', togglePickOrigin);
   
+  // EVENTO CLICK EN EL MAPA PARA ELEGIR ORIGEN
   map.on('click', (e) => {
     if (!pickOriginMode) return;
     origenPersonalizado = { lat: e.latlng.lat, lon: e.latlng.lng, label: 'Punto elegido' };
@@ -579,6 +580,12 @@ document.addEventListener("DOMContentLoaded", () => {
     document.getElementById('map').style.cursor = 'default';
     document.getElementById('calculating-indicator').style.display = 'none';
     if (tasks.length > 0) reorderTasks();
+  });
+  
+  // BOTÓN REORDENAR (ASEGURAR EVENTO)
+  document.getElementById('btn-reorder').addEventListener('click', function() {
+    console.log('🔄 Botón Reordenar presionado');
+    reorderTasks();
   });
   
   loadFullState();
@@ -599,7 +606,7 @@ function togglePickOrigin() {
   }
 }
 
-// ========== GPS (CORREGIDO) ==========
+// ========== GPS ==========
 function initGPS() {
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(
@@ -612,7 +619,6 @@ function initGPS() {
         }).addTo(map);
         gpsReady = true;
         if (tasks.length > 0 && !origenPersonalizado) {
-          // Reordenar solo la primera vez que se obtiene GPS
           lastReorderLatLng = [userLatLng[0], userLatLng[1]];
           reorderTasks();
         }
@@ -625,7 +631,7 @@ function initGPS() {
             reorderTasks();
           }
         } else if (tasks.length > 0 && !origenPersonalizado) {
-          // 🔥 CORRECCIÓN: Reordenar solo si el usuario se movió más de 150 metros
+          // Reordenar solo si el usuario se movió más de 150 metros
           if (lastReorderLatLng) {
             const dist = haversine(lastReorderLatLng[0], lastReorderLatLng[1], userLatLng[0], userLatLng[1]);
             if (dist > 150) {
@@ -639,7 +645,6 @@ function initGPS() {
           }
         }
       }
-      // La distancia en el HUD se actualiza en updateNavigation (siempre, sin throttle)
       if (tasks.length) updateNavigation();
     },
     e => console.warn("GPS:", e.message),
@@ -649,9 +654,19 @@ function initGPS() {
 
 // ========== OBTENER ORIGEN ==========
 function getOrigin() {
-  if (origenPersonalizado) return { lat: origenPersonalizado.lat, lon: origenPersonalizado.lon, label: origenPersonalizado.label };
-  if (userLatLng) return { lat: userLatLng[0], lon: userLatLng[1], label: 'GPS' };
-  if (tasks.length > 0) return { lat: tasks[0].lat, lon: tasks[0].lon, label: 'Primer punto' };
+  if (origenPersonalizado) {
+    console.log(`📍 Origen: Personalizado (${origenPersonalizado.lat}, ${origenPersonalizado.lon})`);
+    return { lat: origenPersonalizado.lat, lon: origenPersonalizado.lon, label: origenPersonalizado.label };
+  }
+  if (userLatLng) {
+    console.log(`📍 Origen: GPS (${userLatLng[0]}, ${userLatLng[1]})`);
+    return { lat: userLatLng[0], lon: userLatLng[1], label: 'GPS' };
+  }
+  if (tasks.length > 0) {
+    console.log(`📍 Origen: Primer punto de la lista (${tasks[0].lat}, ${tasks[0].lon})`);
+    return { lat: tasks[0].lat, lon: tasks[0].lon, label: 'Primer punto' };
+  }
+  console.log(`📍 Origen: Default`);
   return { lat: -28.4689, lon: -65.7792, label: 'Default' };
 }
 
@@ -672,6 +687,7 @@ async function calcularOrden() {
     try {
       const coords = puntos.map(p => `${p.lon},${p.lat}`).join(';');
       const url = `${OSRM_HOST}/table/v1/${perfilRuteo}/${coords}?annotations=distance`;
+      console.log('⏳ Solicitando matriz OSRM...');
       const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
@@ -683,8 +699,16 @@ async function calcularOrden() {
     } catch (e) { console.warn('OSRM table falló, usando Haversine:', e); }
   }
   
-  if (!matrix) return greedyHaversine(puntos);
-  return greedyMatrix(matrix);
+  let nuevoOrden;
+  if (!matrix) {
+    console.log('📏 Usando Haversine para el orden');
+    nuevoOrden = greedyHaversine(puntos);
+  } else {
+    nuevoOrden = greedyMatrix(matrix);
+  }
+  
+  console.log(`📋 Nuevo orden: ${nuevoOrden.join(' → ')}`);
+  return nuevoOrden;
 }
 
 function greedyHaversine(puntos) {
@@ -765,15 +789,25 @@ async function trazarRuta() {
   }
 }
 
-// ========== REORDENAR ==========
+// ========== REORDENAR (CORREGIDO) ==========
 async function reorderTasks() {
-  if (tasks.length === 0) return;
+  if (tasks.length === 0) {
+    console.warn('⚠️ No hay tareas para reordenar.');
+    return;
+  }
+  
+  const origen = getOrigin();
+  console.log(`📍 Reordenando desde: ${origen.label} (${origen.lat}, ${origen.lon})`);
+  
   const indicator = document.getElementById('calculating-indicator');
   indicator.textContent = '⏳ Calculando ruta óptima... (puede tardar unos segundos)';
   indicator.style.display = 'block';
   
   try {
-    if (navigationLine) { map.removeLayer(navigationLine); navigationLine = null; }
+    if (navigationLine) {
+      map.removeLayer(navigationLine);
+      navigationLine = null;
+    }
     
     const nuevoOrden = await calcularOrden();
     if (nuevoOrden.length === tasks.length) {
@@ -783,8 +817,13 @@ async function reorderTasks() {
       updateNavigation();
       await trazarRuta();
       updateTotalCounter();
+      console.log('✅ Reordenamiento completado.');
+    } else {
+      console.warn('⚠️ El nuevo orden no tiene la misma cantidad de tareas.');
     }
-  } catch (e) { console.error('Error reordenando:', e); }
+  } catch (e) {
+    console.error('❌ Error al reordenar:', e);
+  }
   
   indicator.style.display = 'none';
 }
@@ -1075,7 +1114,7 @@ async function reopenTask(index) {
   }
 }
 
-// ========== ACTUALIZACIÓN DEL HUD (CORREGIDO) ==========
+// ========== ACTUALIZACIÓN DEL HUD ==========
 function updateNavigation() {
   const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso').length;
   document.getElementById('hud-panel').style.display = tasks.length ? 'flex' : 'none';
@@ -1121,7 +1160,6 @@ function updateNavigation() {
   }
   actionsContainer.innerHTML = actionButtons;
   
-  // 🔥 SIEMPRE actualizar la distancia en el HUD (con Haversine para que sea inmediato)
   if (userLatLng) {
     const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
     document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
