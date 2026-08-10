@@ -8,11 +8,11 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
-// ========== VERSIÓN DE LA APLICACIÓN ==========
-const APP_VERSION = "v1.0.2";
+// ========== VERSIÓN ==========
+const APP_VERSION = "v1.0.4";
 console.log(`🚀 EC SAPEM Navegador - ${APP_VERSION}`);
 
-// ========== PWA Manifest (solo si no es file://) ==========
+// ========== PWA Manifest ==========
 if (window.location.protocol !== 'file:') {
   const manifest = {
     name: "EC SAPEM Navegador de Trabajo",
@@ -44,8 +44,6 @@ if (window.location.protocol !== 'file:') {
   --status-pending: #3b82f6; --status-progress: #f59e0b; --status-done: #22c55e;
   --status-rejected: #6b7280;
   --text: #e2e8f0; --text-muted: #94a3b8;
-  --color-orden: #3b82f6;
-  --color-lectura: #22c55e;
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'DM Mono', monospace; }
@@ -154,6 +152,7 @@ header {
 }
 .btn-float:hover { transform: scale(1.08); background: var(--surface); }
 .btn-float.active { border-color: var(--accent); background: var(--accent); color: var(--bg); }
+.btn-float:active { transform: scale(0.92); }
 
 .btn-gps-lock { bottom: 24px; right: 16px; }
 .btn-reorder { bottom: 24px; left: 16px; }
@@ -462,7 +461,7 @@ header {
     </button>
 
     <div id="calculating-indicator">⏳ Calculando ruta óptima...</div>
-    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.0.2</span></span></div>
+    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.0.4</span></span></div>
     
     <div id="empty-state">
       <div style="font-size:36px;">🗺️</div>
@@ -495,7 +494,6 @@ header {
 // ========== CONFIGURACIÓN ==========
 const OSRM_HOST = "https://router.project-osrm.org";
 const GOOGLE_MAPS_API_KEY = '';
-const USE_GOOGLE_TRAFFIC = GOOGLE_MAPS_API_KEY !== '';
 
 let map, userLatLng = null, userMarker = null;
 let tasks = [];
@@ -510,13 +508,7 @@ let perfilRuteo = 'driving';
 let pickOriginMode = false;
 let origenPersonalizado = null;
 
-// Throttle de rutas y reordenamiento
-let lastRouteRequest = 0;
-let routeAbortController = null;
-let lastUserLatLng = null;
-let lastReorderLatLng = null; // Para saber si el GPS se movió mucho
-
-const distSq = (a, b) => (a.lat - b.lat)**2 + (a.lon - b.lon)**2;
+let lastReorderLatLng = null;
 
 // ========== MOSTRAR VERSIÓN ==========
 document.getElementById('version-display').textContent = APP_VERSION;
@@ -571,7 +563,6 @@ document.addEventListener("DOMContentLoaded", () => {
   
   document.getElementById('btn-pick-origin').addEventListener('click', togglePickOrigin);
   
-  // EVENTO CLICK EN EL MAPA PARA ELEGIR ORIGEN
   map.on('click', (e) => {
     if (!pickOriginMode) return;
     origenPersonalizado = { lat: e.latlng.lat, lon: e.latlng.lng, label: 'Punto elegido' };
@@ -582,9 +573,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (tasks.length > 0) reorderTasks();
   });
   
-  // BOTÓN REORDENAR (ASEGURAR EVENTO)
   document.getElementById('btn-reorder').addEventListener('click', function() {
     console.log('🔄 Botón Reordenar presionado');
+    this.style.transform = 'scale(0.85)';
+    setTimeout(() => { this.style.transform = ''; }, 200);
     reorderTasks();
   });
   
@@ -631,7 +623,6 @@ function initGPS() {
             reorderTasks();
           }
         } else if (tasks.length > 0 && !origenPersonalizado) {
-          // Reordenar solo si el usuario se movió más de 150 metros
           if (lastReorderLatLng) {
             const dist = haversine(lastReorderLatLng[0], lastReorderLatLng[1], userLatLng[0], userLatLng[1]);
             if (dist > 150) {
@@ -655,39 +646,41 @@ function initGPS() {
 // ========== OBTENER ORIGEN ==========
 function getOrigin() {
   if (origenPersonalizado) {
-    console.log(`📍 Origen: Personalizado (${origenPersonalizado.lat}, ${origenPersonalizado.lon})`);
     return { lat: origenPersonalizado.lat, lon: origenPersonalizado.lon, label: origenPersonalizado.label };
   }
   if (userLatLng) {
-    console.log(`📍 Origen: GPS (${userLatLng[0]}, ${userLatLng[1]})`);
     return { lat: userLatLng[0], lon: userLatLng[1], label: 'GPS' };
   }
   if (tasks.length > 0) {
-    console.log(`📍 Origen: Primer punto de la lista (${tasks[0].lat}, ${tasks[0].lon})`);
     return { lat: tasks[0].lat, lon: tasks[0].lon, label: 'Primer punto' };
   }
-  console.log(`📍 Origen: Default`);
   return { lat: -28.4689, lon: -65.7792, label: 'Default' };
+}
+
+// ========== OBTENER TAREAS ACTIVAS ==========
+function getActiveTasks() {
+  return tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso');
 }
 
 // ========== ALGORITMO DE ORDENAMIENTO ==========
 async function calcularOrden() {
-  if (tasks.length === 0) return [];
-  if (tasks.length === 1) return [0];
+  const activas = getActiveTasks();
+  if (activas.length === 0) return [];
+  if (activas.length === 1) {
+    return [tasks.indexOf(activas[0])];
+  }
   
   const origen = getOrigin();
-  const puntos = [{ lat: origen.lat, lon: origen.lon }, ...tasks];
-  const n = puntos.length;
+  const puntos = [{ lat: origen.lat, lon: origen.lon }, ...activas];
   
   let usarMatriz = false;
-  if (!modoLectura && tasks.length <= 150) usarMatriz = true;
+  if (!modoLectura && activas.length <= 150) usarMatriz = true;
   
   let matrix = null;
   if (usarMatriz) {
     try {
       const coords = puntos.map(p => `${p.lon},${p.lat}`).join(';');
       const url = `${OSRM_HOST}/table/v1/${perfilRuteo}/${coords}?annotations=distance`;
-      console.log('⏳ Solicitando matriz OSRM...');
       const res = await fetch(url);
       if (res.ok) {
         const json = await res.json();
@@ -699,16 +692,15 @@ async function calcularOrden() {
     } catch (e) { console.warn('OSRM table falló, usando Haversine:', e); }
   }
   
-  let nuevoOrden;
+  let ordenActivas;
   if (!matrix) {
     console.log('📏 Usando Haversine para el orden');
-    nuevoOrden = greedyHaversine(puntos);
+    ordenActivas = greedyHaversine(puntos);
   } else {
-    nuevoOrden = greedyMatrix(matrix);
+    ordenActivas = greedyMatrix(matrix);
   }
   
-  console.log(`📋 Nuevo orden: ${nuevoOrden.join(' → ')}`);
-  return nuevoOrden;
+  return ordenActivas.map(i => tasks.indexOf(activas[i]));
 }
 
 function greedyHaversine(puntos) {
@@ -753,17 +745,28 @@ function greedyMatrix(matrix) {
   return order.slice(1).map(i => i - 1);
 }
 
-// ========== TRAZAR RUTA ==========
+// ========== TRAZAR RUTA (SOLO TAREAS ACTIVAS) ==========
 async function trazarRuta() {
-  if (navigationLine) { map.removeLayer(navigationLine); navigationLine = null; }
-  if (orden.length < 2) return;
+  if (navigationLine) { 
+    map.removeLayer(navigationLine); 
+    navigationLine = null; 
+  }
+  
+  const activas = getActiveTasks();
+  if (activas.length === 0) return;
+  
+  const ordenActivo = orden.filter(idx => activas.includes(tasks[idx]));
+  if (ordenActivo.length === 0) return;
   
   const origen = getOrigin();
   const puntos = [{ lat: origen.lat, lon: origen.lon }];
-  for (const idx of orden) puntos.push({ lat: tasks[idx].lat, lon: tasks[idx].lon });
+  for (const idx of ordenActivo) {
+    puntos.push({ lat: tasks[idx].lat, lon: tasks[idx].lon });
+  }
   
   const segmentSize = 100;
   let allCoords = [];
+  
   for (let i = 0; i < puntos.length - 1; i += segmentSize) {
     const end = Math.min(i + segmentSize + 1, puntos.length);
     const segment = puntos.slice(i, end);
@@ -789,18 +792,22 @@ async function trazarRuta() {
   }
 }
 
-// ========== REORDENAR (CORREGIDO) ==========
+// ========== REORDENAR ==========
 async function reorderTasks() {
-  if (tasks.length === 0) {
-    console.warn('⚠️ No hay tareas para reordenar.');
+  const activas = getActiveTasks();
+  if (activas.length === 0) {
+    console.log('ℹ️ No hay tareas activas para reordenar.');
+    if (navigationLine) {
+      map.removeLayer(navigationLine);
+      navigationLine = null;
+    }
     return;
   }
   
-  const origen = getOrigin();
-  console.log(`📍 Reordenando desde: ${origen.label} (${origen.lat}, ${origen.lon})`);
+  console.log(`📍 Reordenando ${activas.length} tareas activas...`);
   
   const indicator = document.getElementById('calculating-indicator');
-  indicator.textContent = '⏳ Calculando ruta óptima... (puede tardar unos segundos)';
+  indicator.textContent = '⏳ Calculando ruta óptima...';
   indicator.style.display = 'block';
   
   try {
@@ -810,7 +817,7 @@ async function reorderTasks() {
     }
     
     const nuevoOrden = await calcularOrden();
-    if (nuevoOrden.length === tasks.length) {
+    if (nuevoOrden.length === activas.length) {
       orden = nuevoOrden;
       saveFullState();
       renderTasks();
@@ -818,8 +825,6 @@ async function reorderTasks() {
       await trazarRuta();
       updateTotalCounter();
       console.log('✅ Reordenamiento completado.');
-    } else {
-      console.warn('⚠️ El nuevo orden no tiene la misma cantidad de tareas.');
     }
   } catch (e) {
     console.error('❌ Error al reordenar:', e);
@@ -831,8 +836,11 @@ async function reorderTasks() {
 // ========== RENDERIZADO ==========
 function renderTasks() {
   markersGroup.clearLayers();
-  if (orden.length === 0) { for (let i = 0; i < tasks.length; i++) orden.push(i); }
-
+  
+  if (orden.length === 0) {
+    for (let i = 0; i < tasks.length; i++) orden.push(i);
+  }
+  
   tasks.forEach((t, idx) => {
     const pos = orden.indexOf(idx);
     const orderNumber = pos !== -1 ? pos + 1 : '?';
@@ -912,20 +920,25 @@ function parseOrdenesTXT(text) {
   if (lines[0].includes(';')) sep = ';';
   else if (lines[0].includes(',')) sep = ',';
   const headers = lines[0].split(sep).map(h => h.trim());
-  const possibleNames = ['numero', 'número', 'nro', 'ot'];
-  const idxNum = headers.findIndex(h => {
-    const clean = h.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-    return possibleNames.some(name => clean === name);
-  });
-  const finalIdxNum = idxNum !== -1 ? idxNum : 0;
-  const idxSum = headers.findIndex(h => /Suministro|Sum/i.test(h));
-  const idxDir = headers.findIndex(h => /Direccion|Dirección|Domicilio/i.test(h));
-  const idxTit = headers.findIndex(h => /Titular|Cliente/i.test(h));
-  const idxTipo = headers.findIndex(h => /Tipo Orden|Tipo/i.test(h));
-  const idxMotivo = headers.findIndex(h => /Motivo/i.test(h));
-  const idxEstado = headers.findIndex(h => /Estado/i.test(h));
-  const idxGeo = headers.findIndex(h => /Punto GEO|Geo|Coordenadas/i.test(h));
-  const idxPrio = headers.findIndex(h => /Posee Priorid|Prioridad|Prio/i.test(h));
+  
+  // Búsqueda mejorada de columnas
+  const findCol = (patterns) => {
+    for (const p of patterns) {
+      const idx = headers.findIndex(h => h.toLowerCase().trim() === p.toLowerCase().trim());
+      if (idx !== -1) return idx;
+    }
+    return -1;
+  };
+  
+  const idxNum = findCol(['Número', 'Numero', 'OT', 'Nro']);
+  const idxSum = findCol(['Suministro']);
+  const idxDir = findCol(['Direccion Consumo', 'Dirección Consumo', 'Direccion', 'Dirección', 'Domicilio']);
+  const idxTit = findCol(['Titular', 'Cliente']);
+  const idxTipo = findCol(['Tipo Orden', 'Tipo']);
+  const idxMotivo = findCol(['Motivo Orden', 'Motivo']);
+  const idxEstado = findCol(['Estado']);
+  const idxGeo = findCol(['Punto GEO', 'Geo', 'Coordenadas']);
+  const idxPrio = findCol(['Posee Priorid.', 'Posee Prioridad', 'Prioridad', 'Prio']);
   
   const tasks = [];
   for (let i = 1; i < lines.length; i++) {
@@ -936,17 +949,21 @@ function parseOrdenesTXT(text) {
     if (!coords) continue;
     
     let prioridad = 'Media';
-    const prioVal = idxPrio >= 0 ? cols[idxPrio] : '';
-    if (/Si|Alta/i.test(prioVal)) prioridad = 'Alta';
-    else if (/No|Baja/i.test(prioVal)) prioridad = 'Baja';
+    if (idxPrio >= 0) {
+      const prioVal = cols[idxPrio] || '';
+      if (/Si|Alta|Sí/i.test(prioVal)) prioridad = 'Alta';
+      else if (/No|Baja/i.test(prioVal)) prioridad = 'Baja';
+    }
     
     let status = 'Pendiente';
-    const estadoVal = idxEstado >= 0 ? cols[idxEstado] : '';
-    if (/Completada|Finalizada|Realizada/i.test(estadoVal)) status = 'Completada';
-    else if (/Rechazada|Cancelada/i.test(estadoVal)) status = 'Rechazada';
-    else if (/Progreso|En Curso/i.test(estadoVal)) status = 'EnProgreso';
+    if (idxEstado >= 0) {
+      const estadoVal = cols[idxEstado] || '';
+      if (/Completada|Finalizada|Realizada/i.test(estadoVal)) status = 'Completada';
+      else if (/Rechazada|Cancelada/i.test(estadoVal)) status = 'Rechazada';
+      else if (/Progreso|En Curso/i.test(estadoVal)) status = 'EnProgreso';
+    }
     
-    const numeroOT = (finalIdxNum < cols.length && cols[finalIdxNum]) ? cols[finalIdxNum] : `OT-${i}`;
+    const numeroOT = (idxNum >= 0 && cols[idxNum]) ? cols[idxNum] : `OT-${i}`;
     tasks.push({
       lat: coords.lat, lon: coords.lon, numeroOT: numeroOT,
       suministro: idxSum >= 0 ? cols[idxSum] : '',
@@ -962,8 +979,22 @@ function parseOrdenesTXT(text) {
 
 function parseLecturasTXT(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
+  
+  // Detección mejorada: buscar "Grid" y "Waypoint" en el contenido
+  const isGrid = text.includes('Grid') && text.includes('Waypoint') && text.includes('Lat/Long');
+  if (!isGrid) {
+    console.log('⚠️ No es formato Grid, intentando parsear como órdenes...');
+    return parseOrdenesTXT(text);
+  }
+  
   let headerLine = null;
-  for (let i = 0; i < lines.length; i++) { if (/^Header/i.test(lines[i].trim())) { headerLine = lines[i]; break; } }
+  for (let i = 0; i < lines.length; i++) { 
+    if (/^Header/i.test(lines[i].trim())) { 
+      headerLine = lines[i]; 
+      break; 
+    } 
+  }
+  
   let columnNames = [];
   if (headerLine) {
     let parts = headerLine.split(/\t+/).map(c => c.trim()).filter(c => c !== '');
@@ -972,13 +1003,19 @@ function parseLecturasTXT(text) {
   } else {
     columnNames = ['Name', 'DESCRIPTION', 'Type', 'Position', 'Altitude', 'Depth', 'Proximity', 'Temperature', 'Display Mode', 'Color', 'Symbol', 'Facility', 'City', 'STATE', 'Country', 'Date Modified', 'Link', 'Categories'];
   }
+  
   const idxName = columnNames.findIndex(h => /Name/i.test(h));
   const idxDesc = columnNames.findIndex(h => /DESCRIPTION|Description/i.test(h));
   const idxPos = columnNames.findIndex(h => /Position/i.test(h));
   const idxCity = columnNames.findIndex(h => /City/i.test(h));
   
   let startIdx = -1;
-  for (let i = 0; i < lines.length; i++) { if (/^Waypoint/i.test(lines[i].trim())) { startIdx = i; break; } }
+  for (let i = 0; i < lines.length; i++) { 
+    if (/^Waypoint/i.test(lines[i].trim())) { 
+      startIdx = i; 
+      break; 
+    } 
+  }
   if (startIdx === -1) return [];
   
   const tasks = [];
@@ -999,7 +1036,10 @@ function parseLecturasTXT(text) {
     
     let suministro = desc, prefijo = '';
     const parts = desc.split('-');
-    if (parts.length >= 2) { prefijo = parts[0] || ''; suministro = parts.slice(1).join('-') || desc; }
+    if (parts.length >= 2) { 
+      prefijo = parts[0] || ''; 
+      suministro = parts.slice(1).join('-') || desc; 
+    }
     tasks.push({
       lat: coords.lat, lon: coords.lon, numeroOT: name,
       suministro: suministro, direccion: city || '',
@@ -1077,6 +1117,7 @@ function irATarea(index) {
     saveProgress(); saveFullState();
     activeTaskIndex = index;
     updateNavigation(); renderTasks();
+    trazarRuta();
     navigateDirectly(tasks[index].lat, tasks[index].lon);
   }
 }
@@ -1088,39 +1129,57 @@ function navigateDirectly(lat, lon) {
 
 async function changeTaskStatus(newStatus) {
   if (activeTaskIndex < 0 || activeTaskIndex >= tasks.length) return;
+  
   tasks[activeTaskIndex].status = newStatus;
   saveProgress(); saveFullState();
-  renderTasks();
+  
   if (newStatus === 'Completada' || newStatus === 'Rechazada') {
-    const pos = orden.indexOf(activeTaskIndex);
-    let nextIdx = -1;
-    for (let i = pos + 1; i < orden.length; i++) {
-      const idx = orden[i];
-      if (tasks[idx].status === 'Pendiente' || tasks[idx].status === 'EnProgreso') {
-        nextIdx = idx; break;
+    const activas = getActiveTasks();
+    if (activas.length > 0) {
+      const pos = orden.indexOf(activeTaskIndex);
+      let nextIdx = -1;
+      for (let i = pos + 1; i < orden.length; i++) {
+        const idx = orden[i];
+        if (tasks[idx].status === 'Pendiente' || tasks[idx].status === 'EnProgreso') {
+          nextIdx = idx;
+          break;
+        }
       }
+      if (nextIdx === -1 && activas.length > 0) {
+        nextIdx = tasks.indexOf(activas[0]);
+      }
+      activeTaskIndex = nextIdx;
+    } else {
+      activeTaskIndex = -1;
     }
-    activeTaskIndex = nextIdx !== -1 ? nextIdx : -1;
+    
+    await reorderTasks();
+  } else {
+    renderTasks();
     updateNavigation();
-  } else { updateNavigation(); }
+    trazarRuta();
+  }
 }
+
 async function reopenTask(index) {
   if (index < 0 || index >= tasks.length) return;
   if (tasks[index].status === 'Completada' || tasks[index].status === 'Rechazada') {
     tasks[index].status = 'Pendiente';
     saveProgress(); saveFullState();
     activeTaskIndex = index;
-    updateNavigation(); renderTasks();
+    await reorderTasks();
+    renderTasks();
+    updateNavigation();
   }
 }
 
 // ========== ACTUALIZACIÓN DEL HUD ==========
 function updateNavigation() {
-  const pendientes = tasks.filter(t => t.status === 'Pendiente' || t.status === 'EnProgreso').length;
+  const activas = getActiveTasks();
   document.getElementById('hud-panel').style.display = tasks.length ? 'flex' : 'none';
   const actionsContainer = document.getElementById('btn-actions-container');
   
-  if (activeTaskIndex === -1 || pendientes === 0) {
+  if (activeTaskIndex === -1 || activas.length === 0) {
     document.getElementById('lbl-ot').textContent = "Sin tareas pendientes";
     document.getElementById('lbl-detalles').textContent = "";
     document.getElementById('lbl-distance').textContent = "✓";
@@ -1160,7 +1219,8 @@ function updateNavigation() {
   }
   actionsContainer.innerHTML = actionButtons;
   
-  if (userLatLng) {
+  // ✅ ACTUALIZAR DISTANCIA SIEMPRE
+  if (userLatLng && t) {
     const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
     document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
   } else {
@@ -1175,13 +1235,16 @@ function saveFullState() {
     localStorage.setItem('ec_sapem_full_state', JSON.stringify(data));
   } catch(e) {}
 }
+
 function loadFullState() {
   try {
     const raw = localStorage.getItem('ec_sapem_full_state');
     if (!raw) return;
     const data = JSON.parse(raw);
     if (data.tasks && data.tasks.length) {
-      tasks = data.tasks; orden = data.orden || []; modoLectura = data.modoLectura || false;
+      tasks = data.tasks; 
+      orden = data.orden || []; 
+      modoLectura = data.modoLectura || false;
       perfilRuteo = data.perfilRuteo || 'driving';
       origenPersonalizado = data.origenPersonalizado || null;
       activeTaskIndex = data.activeTaskIndex !== undefined ? data.activeTaskIndex : -1;
@@ -1191,12 +1254,14 @@ function loadFullState() {
       document.getElementById('hud-panel').style.display = 'flex';
       document.getElementById('modalTitle').innerHTML = modoLectura ? '📋 Lista de Lecturas <span id="modalTotal">(0)</span>' : '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
       
-      renderTasks(); updateNavigation();
-      if (orden.length > 1) trazarRuta();
+      renderTasks(); 
+      updateNavigation();
+      trazarRuta();
       fitMapToFeatures();
     }
   } catch(e) { console.warn('Error cargando estado:', e); }
 }
+
 function saveProgress() {
   if (!currentRouteId) return;
   try {
@@ -1205,6 +1270,7 @@ function saveProgress() {
     localStorage.setItem(currentRouteId, JSON.stringify(statusMap));
   } catch(e) {}
 }
+
 function loadProgress() {
   if (!currentRouteId) return;
   try {
@@ -1223,24 +1289,40 @@ document.getElementById('file-loader').addEventListener('change', async function
   reader.onload = async function(evt) {
     let rawTasks = [], detectedMode = false;
     
-    if (navigationLine) { map.removeLayer(navigationLine); navigationLine = null; }
+    // ✅ LIMPIAR LÍNEA ANTERIOR
+    if (navigationLine) { 
+      map.removeLayer(navigationLine); 
+      navigationLine = null; 
+    }
     
     try {
-      if (ext.endsWith('.gpx')) { rawTasks = parseGPX(evt.target.result); detectedMode = false; } 
+      if (ext.endsWith('.gpx')) { 
+        rawTasks = parseGPX(evt.target.result); 
+        detectedMode = false; 
+      } 
       else if (ext.endsWith('.txt') || ext.endsWith('.csv')) {
         let content = evt.target.result;
         content = content.replace(/^\uFEFF/, '');
-        if (content.includes('Grid') && content.includes('Lat/Long') && content.includes('Waypoint')) {
-          rawTasks = parseLecturasTXT(content); detectedMode = true;
-        } else { rawTasks = parseOrdenesTXT(content); detectedMode = false; }
+        // ✅ Detección mejorada: buscar "Grid" y "Waypoint"
+        if (content.includes('Grid') && content.includes('Waypoint') && content.includes('Lat/Long')) {
+          rawTasks = parseLecturasTXT(content); 
+          detectedMode = true;
+        } else {
+          rawTasks = parseOrdenesTXT(content); 
+          detectedMode = false;
+        }
       }
       else if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) {
         const data = new Uint8Array(evt.target.result);
         const wb = XLSX.read(data, { type: 'array' });
         const matrix = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: "" });
-        rawTasks = parseMatrix(matrix); detectedMode = false;
+        rawTasks = parseMatrix(matrix); 
+        detectedMode = false;
       }
-    } catch (err) { alert("Error al procesar archivo: " + err.message); return; }
+    } catch (err) { 
+      alert("Error al procesar archivo: " + err.message); 
+      return; 
+    }
     
     if (rawTasks.length) {
       modoLectura = detectedMode;
@@ -1266,11 +1348,16 @@ document.getElementById('file-loader').addEventListener('change', async function
       orden = [];
       await reorderTasks();
       fitMapToFeatures();
-    } else { alert("No se encontraron tareas con coordenadas válidas."); }
+    } else { 
+      alert("No se encontraron tareas con coordenadas válidas."); 
+    }
   };
   
-  if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) { reader.readAsArrayBuffer(file); } 
-  else { reader.readAsText(file, 'UTF-8'); }
+  if (ext.endsWith('.xls') || ext.endsWith('.xlsx')) { 
+    reader.readAsArrayBuffer(file); 
+  } else { 
+    reader.readAsText(file, 'UTF-8'); 
+  }
 });
 
 // ========== UTILIDADES ==========
@@ -1280,7 +1367,15 @@ function haversine(lat1, lon1, lat2, lon2) {
   const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon/2)**2;
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
-function centerOnUser() { if (userLatLng) map.setView(userLatLng, 17, { animate: true }); }
+
+function centerOnUser() { 
+  if (userLatLng) {
+    map.setView(userLatLng, 17, { animate: true });
+  } else {
+    alert('GPS no disponible. Esperá a que se active la ubicación.');
+  }
+}
+
 function fitMapToFeatures() {
   const pts = tasks.map(t => [t.lat, t.lon]);
   if (userLatLng) pts.push(userLatLng);
@@ -1289,31 +1384,45 @@ function fitMapToFeatures() {
 
 // ========== LISTADO MODAL ==========
 function updateTotalCounter() {
-  document.getElementById('totalCount').textContent = tasks.length;
+  const activas = getActiveTasks();
+  document.getElementById('totalCount').textContent = activas.length;
   document.getElementById('modalTotal').textContent = `(${tasks.length})`;
 }
+
 function openTaskList() {
   document.getElementById('taskListModal').classList.add('active');
   renderTaskList();
   document.body.style.overflow = 'hidden';
 }
+
 function closeTaskList() {
   document.getElementById('taskListModal').classList.remove('active');
   document.body.style.overflow = '';
 }
-function closeModalOutside(event) { if (event.target === event.currentTarget) closeTaskList(); }
+
+function closeModalOutside(event) { 
+  if (event.target === event.currentTarget) closeTaskList(); 
+}
+
 function renderTaskList() {
   const container = document.getElementById('taskListContainer');
   if (!tasks.length) {
     container.innerHTML = `<div style="text-align:center; padding:40px 20px; color: var(--text-muted);"><div style="font-size:40px; margin-bottom:12px;">📭</div><p>No hay tareas cargadas</p></div>`;
     return;
   }
+  
   const searchTerm = document.getElementById('searchInput').value.toLowerCase().trim();
-  const filtered = tasks.filter(t => t.numeroOT.toLowerCase().includes(searchTerm) || t.direccion.toLowerCase().includes(searchTerm) || t.suministro.toLowerCase().includes(searchTerm));
+  const filtered = tasks.filter(t => 
+    t.numeroOT.toLowerCase().includes(searchTerm) || 
+    t.direccion.toLowerCase().includes(searchTerm) || 
+    t.suministro.toLowerCase().includes(searchTerm)
+  );
+  
   if (!filtered.length) {
     container.innerHTML = `<div style="text-align:center; padding:30px 20px; color: var(--text-muted);"><p>🔍 No se encontraron tareas</p></div>`;
     return;
   }
+  
   let html = '';
   filtered.forEach((t) => {
     const idx = tasks.indexOf(t);
@@ -1323,11 +1432,13 @@ function renderTaskList() {
     const isPending = t.status === 'Pendiente' || t.status === 'EnProgreso';
     const statusClass = t.status.toLowerCase().replace(' ', '');
     const statusEmoji = t.status === 'Pendiente' ? '📌' : t.status === 'EnProgreso' ? '🔄' : t.status === 'Completada' ? '✅' : '❌';
+    
     let distanceText = '--';
     if (userLatLng) {
       const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
       distanceText = dist >= 1000 ? `${(dist/1000).toFixed(1)}km` : `${Math.round(dist)}m`;
     }
+    
     const prefix = modoLectura ? 'LECT' : 'OT';
     html += `
       <div class="task-item ${statusClass} ${isActive ? 'active-item' : ''}" onclick="selectTaskFromList(${idx})">
@@ -1347,7 +1458,9 @@ function renderTaskList() {
   });
   container.innerHTML = html;
 }
+
 function filterTaskList() { renderTaskList(); }
+
 function selectTaskFromList(index) {
   if (index < 0 || index >= tasks.length) return;
   closeTaskList();
