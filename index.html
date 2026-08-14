@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>EC SAPEM - Navegador de trabajo</title>
+<title>GIOT - Gestor Inteligente de Órdenes de Trabajo</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ========== VERSIÓN ==========
-const APP_VERSION = "v1.0.4";
-console.log(`🚀 EC SAPEM Navegador - ${APP_VERSION}`);
+const APP_VERSION = "v1.1.0";
+console.log(`🚀 GIOT - Gestor Inteligente de Órdenes de Trabajo - ${APP_VERSION}`);
 
 // ========== PWA Manifest ==========
 if (window.location.protocol !== 'file:') {
   const manifest = {
-    name: "EC SAPEM Navegador de Trabajo",
-    short_name: "EC SAPEM",
-    description: "Navegador de órdenes de trabajo y lecturas para EC SAPEM",
+    name: "GIOT - Gestor Inteligente de Órdenes de Trabajo",
+    short_name: "GIOT",
+    description: "Gestor Inteligente de Órdenes de Trabajo para EC SAPEM",
     start_url: ".",
     display: "standalone",
     background_color: "#0b0d13",
@@ -197,13 +197,19 @@ header {
 }
 #empty-state p { color: var(--text-muted); font-size: 12px; margin-top: 10px; line-height: 1.6; }
 
-.pulse-user {
-  background: #3b82f6; border: 2.5px solid white; border-radius: 50%;
-  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); animation: pulse 1.8s infinite;
+/* ========== ESTILO DEL MARCADOR DE UBICACIÓN ACTUAL ========== */
+.user-location-marker {
+  background: #3b82f6;
+  border: 3px solid white;
+  border-radius: 50%;
+  width: 18px;
+  height: 18px;
+  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
+  animation: pulse-location 1.8s infinite;
 }
-@keyframes pulse {
+@keyframes pulse-location {
   0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 12px rgba(59, 130, 246, 0); }
+  70% { transform: scale(1); box-shadow: 0 0 0 14px rgba(59, 130, 246, 0); }
   100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
 
@@ -421,7 +427,7 @@ header {
 <body>
 <div class="app-container">
   <header>
-    <div class="title">EC SAPEM · Navegador</div>
+    <div class="title">GIOT · Gestor Inteligente</div>
     <div class="header-controls">
       <select id="profile-select">
         <option value="driving">🚗 Vehículo</option>
@@ -461,12 +467,13 @@ header {
     </button>
 
     <div id="calculating-indicator">⏳ Calculando ruta óptima...</div>
-    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.0.4</span></span></div>
+    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.1.0</span></span></div>
     
     <div id="empty-state">
       <div style="font-size:36px;">🗺️</div>
-      <p>Cargá tu archivo con las Órdenes de Trabajo o Lecturas.<br>El sistema calculará la ruta óptima usando el motor OSRM.</p>
+      <p>Cargá tu archivo con las Órdenes de Trabajo o Lecturas.<br>Los puntos se mostrarán en el mapa con numeración.</p>
       <p style="font-size:11px; margin-top:6px;">Podés elegir entre perfil vehicular o peatonal, y fijar un punto de partida en el mapa.</p>
+      <p style="font-size:11px; margin-top:4px; color: var(--accent);">📍 Tu ubicación se muestra con un punto azul con pulso.</p>
     </div>
   </div>
 </div>
@@ -500,7 +507,6 @@ let tasks = [];
 let orden = [];
 let activeTaskIndex = -1;
 let markersGroup = null;
-let navigationLine = null;
 let currentRouteId = "";
 let gpsReady = false;
 let modoLectura = false;
@@ -517,7 +523,7 @@ document.getElementById('version-display').textContent = APP_VERSION;
 if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
   try {
     const swCode = `
-      const CACHE_NAME = 'ec-sapem-v3';
+      const CACHE_NAME = 'giot-v1';
       const urlsToCache = ['.'];
       self.addEventListener('install', e => {
         e.waitUntil(caches.open(CACHE_NAME).then(cache => cache.addAll(urlsToCache)));
@@ -598,44 +604,43 @@ function togglePickOrigin() {
   }
 }
 
-// ========== GPS ==========
+// ========== GPS (CORREGIDO) ==========
 function initGPS() {
   if (!navigator.geolocation) return;
   navigator.geolocation.watchPosition(
     pos => {
       userLatLng = [pos.coords.latitude, pos.coords.longitude];
+      
+      // Crear o actualizar el marcador de ubicación
       if (!userMarker) {
-        userMarker = L.marker(userLatLng, {
-          icon: L.divIcon({ className: 'pulse-user', iconSize: [16, 16], iconAnchor: [8, 8] }),
-          zIndexOffset: 1000
-        }).addTo(map);
+        const icon = L.divIcon({
+          className: 'user-location-marker',
+          iconSize: [18, 18],
+          iconAnchor: [9, 9]
+        });
+        userMarker = L.marker(userLatLng, { icon: icon, zIndexOffset: 1000 }).addTo(map);
         gpsReady = true;
-        if (tasks.length > 0 && !origenPersonalizado) {
-          lastReorderLatLng = [userLatLng[0], userLatLng[1]];
-          reorderTasks();
-        }
       } else {
         userMarker.setLatLng(userLatLng);
-        if (!gpsReady && tasks.length > 0) {
-          gpsReady = true;
-          if (!origenPersonalizado) {
-            lastReorderLatLng = [userLatLng[0], userLatLng[1]];
-            reorderTasks();
-          }
-        } else if (tasks.length > 0 && !origenPersonalizado) {
-          if (lastReorderLatLng) {
-            const dist = haversine(lastReorderLatLng[0], lastReorderLatLng[1], userLatLng[0], userLatLng[1]);
-            if (dist > 150) {
-              console.log(`📍 Movimiento detectado: ${dist.toFixed(0)}m. Reordenando...`);
-              lastReorderLatLng = [userLatLng[0], userLatLng[1]];
-              reorderTasks();
-            }
-          } else {
+        if (!gpsReady) gpsReady = true;
+      }
+      
+      // ✅ Solo reordenar automáticamente si no es modo lectura con >50
+      const deberiaOrdenar = tasks.length > 0 && !origenPersonalizado && !(modoLectura && tasks.length > 50);
+      if (deberiaOrdenar) {
+        if (!lastReorderLatLng) {
+          lastReorderLatLng = [userLatLng[0], userLatLng[1]];
+          reorderTasks();
+        } else {
+          const dist = haversine(lastReorderLatLng[0], lastReorderLatLng[1], userLatLng[0], userLatLng[1]);
+          if (dist > 150) {
+            console.log(`📍 Movimiento detectado: ${dist.toFixed(0)}m. Reordenando...`);
             lastReorderLatLng = [userLatLng[0], userLatLng[1]];
             reorderTasks();
           }
         }
       }
+      
       if (tasks.length) updateNavigation();
     },
     e => console.warn("GPS:", e.message),
@@ -745,84 +750,27 @@ function greedyMatrix(matrix) {
   return order.slice(1).map(i => i - 1);
 }
 
-// ========== TRAZAR RUTA (SOLO TAREAS ACTIVAS) ==========
-async function trazarRuta() {
-  if (navigationLine) { 
-    map.removeLayer(navigationLine); 
-    navigationLine = null; 
-  }
-  
-  const activas = getActiveTasks();
-  if (activas.length === 0) return;
-  
-  const ordenActivo = orden.filter(idx => activas.includes(tasks[idx]));
-  if (ordenActivo.length === 0) return;
-  
-  const origen = getOrigin();
-  const puntos = [{ lat: origen.lat, lon: origen.lon }];
-  for (const idx of ordenActivo) {
-    puntos.push({ lat: tasks[idx].lat, lon: tasks[idx].lon });
-  }
-  
-  const segmentSize = 100;
-  let allCoords = [];
-  
-  for (let i = 0; i < puntos.length - 1; i += segmentSize) {
-    const end = Math.min(i + segmentSize + 1, puntos.length);
-    const segment = puntos.slice(i, end);
-    const coords = segment.map(p => `${p.lon},${p.lat}`).join(';');
-    const url = `${OSRM_HOST}/route/v1/${perfilRuteo}/${coords}?overview=full&geometries=geojson&continue_straight=false`;
-    try {
-      const res = await fetch(url);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.code === 'Ok' && json.routes && json.routes.length > 0) {
-          const geom = json.routes[0].geometry;
-          if (geom && geom.coordinates) {
-            const coordsArray = geom.coordinates.map(c => [c[1], c[0]]);
-            allCoords = allCoords.concat(coordsArray);
-          }
-        }
-      }
-    } catch (e) { console.warn('Error trazando segmento:', e); }
-  }
-  
-  if (allCoords.length > 1) {
-    navigationLine = L.polyline(allCoords, { color: '#4fd8a4', weight: 4, opacity: 0.7, smoothFactor: 1 }).addTo(map);
-  }
-}
-
-// ========== REORDENAR ==========
+// ========== REORDENAR (sin líneas) ==========
 async function reorderTasks() {
   const activas = getActiveTasks();
   if (activas.length === 0) {
     console.log('ℹ️ No hay tareas activas para reordenar.');
-    if (navigationLine) {
-      map.removeLayer(navigationLine);
-      navigationLine = null;
-    }
     return;
   }
   
   console.log(`📍 Reordenando ${activas.length} tareas activas...`);
   
   const indicator = document.getElementById('calculating-indicator');
-  indicator.textContent = '⏳ Calculando ruta óptima...';
+  indicator.textContent = '⏳ Calculando orden óptimo...';
   indicator.style.display = 'block';
   
   try {
-    if (navigationLine) {
-      map.removeLayer(navigationLine);
-      navigationLine = null;
-    }
-    
     const nuevoOrden = await calcularOrden();
     if (nuevoOrden.length === activas.length) {
       orden = nuevoOrden;
       saveFullState();
       renderTasks();
       updateNavigation();
-      await trazarRuta();
       updateTotalCounter();
       console.log('✅ Reordenamiento completado.');
     }
@@ -833,7 +781,7 @@ async function reorderTasks() {
   indicator.style.display = 'none';
 }
 
-// ========== RENDERIZADO ==========
+// ========== RENDERIZADO DE MARCADORES (sin líneas) ==========
 function renderTasks() {
   markersGroup.clearLayers();
   
@@ -921,7 +869,6 @@ function parseOrdenesTXT(text) {
   else if (lines[0].includes(',')) sep = ',';
   const headers = lines[0].split(sep).map(h => h.trim());
   
-  // Búsqueda mejorada de columnas
   const findCol = (patterns) => {
     for (const p of patterns) {
       const idx = headers.findIndex(h => h.toLowerCase().trim() === p.toLowerCase().trim());
@@ -980,7 +927,6 @@ function parseOrdenesTXT(text) {
 function parseLecturasTXT(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim() !== '');
   
-  // Detección mejorada: buscar "Grid" y "Waypoint" en el contenido
   const isGrid = text.includes('Grid') && text.includes('Waypoint') && text.includes('Lat/Long');
   if (!isGrid) {
     console.log('⚠️ No es formato Grid, intentando parsear como órdenes...');
@@ -1117,7 +1063,6 @@ function irATarea(index) {
     saveProgress(); saveFullState();
     activeTaskIndex = index;
     updateNavigation(); renderTasks();
-    trazarRuta();
     navigateDirectly(tasks[index].lat, tasks[index].lon);
   }
 }
@@ -1157,7 +1102,6 @@ async function changeTaskStatus(newStatus) {
   } else {
     renderTasks();
     updateNavigation();
-    trazarRuta();
   }
 }
 
@@ -1219,7 +1163,6 @@ function updateNavigation() {
   }
   actionsContainer.innerHTML = actionButtons;
   
-  // ✅ ACTUALIZAR DISTANCIA SIEMPRE
   if (userLatLng && t) {
     const dist = haversine(userLatLng[0], userLatLng[1], t.lat, t.lon);
     document.getElementById('lbl-distance').textContent = dist >= 1000 ? `${(dist/1000).toFixed(2)} km` : `${Math.round(dist)} m`;
@@ -1232,13 +1175,13 @@ function updateNavigation() {
 function saveFullState() {
   try {
     const data = { tasks, orden, modoLectura, perfilRuteo, origenPersonalizado, activeTaskIndex };
-    localStorage.setItem('ec_sapem_full_state', JSON.stringify(data));
+    localStorage.setItem('giot_full_state', JSON.stringify(data));
   } catch(e) {}
 }
 
 function loadFullState() {
   try {
-    const raw = localStorage.getItem('ec_sapem_full_state');
+    const raw = localStorage.getItem('giot_full_state');
     if (!raw) return;
     const data = JSON.parse(raw);
     if (data.tasks && data.tasks.length) {
@@ -1256,7 +1199,6 @@ function loadFullState() {
       
       renderTasks(); 
       updateNavigation();
-      trazarRuta();
       fitMapToFeatures();
     }
   } catch(e) { console.warn('Error cargando estado:', e); }
@@ -1289,12 +1231,6 @@ document.getElementById('file-loader').addEventListener('change', async function
   reader.onload = async function(evt) {
     let rawTasks = [], detectedMode = false;
     
-    // ✅ LIMPIAR LÍNEA ANTERIOR
-    if (navigationLine) { 
-      map.removeLayer(navigationLine); 
-      navigationLine = null; 
-    }
-    
     try {
       if (ext.endsWith('.gpx')) { 
         rawTasks = parseGPX(evt.target.result); 
@@ -1303,7 +1239,6 @@ document.getElementById('file-loader').addEventListener('change', async function
       else if (ext.endsWith('.txt') || ext.endsWith('.csv')) {
         let content = evt.target.result;
         content = content.replace(/^\uFEFF/, '');
-        // ✅ Detección mejorada: buscar "Grid" y "Waypoint"
         if (content.includes('Grid') && content.includes('Waypoint') && content.includes('Lat/Long')) {
           rawTasks = parseLecturasTXT(content); 
           detectedMode = true;
@@ -1345,9 +1280,22 @@ document.getElementById('file-loader').addEventListener('change', async function
       document.getElementById('hud-panel').style.display = 'flex';
       document.getElementById('modalTitle').innerHTML = modoLectura ? '📋 Lista de Lecturas <span id="modalTotal">(0)</span>' : '📋 Lista de Trabajos <span id="modalTotal">(0)</span>';
       
-      orden = [];
-      await reorderTasks();
-      fitMapToFeatures();
+      if (modoLectura && rawTasks.length > 50) {
+        console.log(`ℹ️ Lecturas > 50 (${rawTasks.length}). No se ordena automáticamente. Usá el botón 🔄 para ordenar.`);
+        orden = [];
+        for (let i = 0; i < tasks.length; i++) orden.push(i);
+        renderTasks();
+        updateNavigation();
+        updateTotalCounter();
+        fitMapToFeatures();
+        const indicator = document.getElementById('calculating-indicator');
+        indicator.textContent = `📌 ${tasks.length} lecturas cargadas. Presioná 🔄 para ordenar por cercanía.`;
+        indicator.style.display = 'block';
+        setTimeout(() => { indicator.style.display = 'none'; }, 5000);
+      } else {
+        await reorderTasks();
+        fitMapToFeatures();
+      }
     } else { 
       alert("No se encontraron tareas con coordenadas válidas."); 
     }
