@@ -9,7 +9,7 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script>
 // ========== VERSIÓN ==========
-const APP_VERSION = "v1.1.0";
+const APP_VERSION = "v1.1.2";  // ✅ VERSIÓN ACTUALIZADA
 console.log(`🚀 GIOT - Gestor Inteligente de Órdenes de Trabajo - ${APP_VERSION}`);
 
 // ========== PWA Manifest ==========
@@ -34,7 +34,7 @@ if (window.location.protocol !== 'file:') {
 }
 </script>
 <style>
-/* ========== ESTILOS ========== */
+/* ========== ESTILOS (todos los estilos previos) ========== */
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@700;800&display=swap');
 
 :root {
@@ -199,18 +199,37 @@ header {
 
 /* ========== ESTILO DEL MARCADOR DE UBICACIÓN ACTUAL ========== */
 .user-location-marker {
-  background: #3b82f6;
-  border: 3px solid white;
-  border-radius: 50%;
-  width: 18px;
-  height: 18px;
-  box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-  animation: pulse-location 1.8s infinite;
+  width: 24px;
+  height: 24px;
+  position: relative;
 }
-@keyframes pulse-location {
-  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
-  70% { transform: scale(1); box-shadow: 0 0 0 14px rgba(59, 130, 246, 0); }
-  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+.user-location-marker .pulse-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 12px;
+  height: 12px;
+  background: #3b82f6;
+  border: 2.5px solid white;
+  border-radius: 50%;
+  z-index: 2;
+}
+.user-location-marker .pulse-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(59, 130, 246, 0.3);
+  animation: pulse-ring 1.8s infinite;
+  z-index: 1;
+}
+@keyframes pulse-ring {
+  0% { transform: scale(0.9); opacity: 1; }
+  70% { transform: scale(2.2); opacity: 0; }
+  100% { transform: scale(0.9); opacity: 0; }
 }
 
 /* ========== ESTILOS DEL LISTADO MODAL ========== */
@@ -422,6 +441,24 @@ header {
     .task-item { padding: 8px 10px; }
     .task-ot { font-size: 12px; }
 }
+
+/* ========== ESTILO PARA EL CONTROL DE CAPAS ========== */
+.leaflet-control-layers {
+  background: var(--surface2) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: 8px !important;
+  color: var(--text) !important;
+  font-family: 'DM Mono', monospace !important;
+}
+.leaflet-control-layers label {
+  color: var(--text) !important;
+}
+.leaflet-control-layers-selector {
+  accent-color: var(--accent) !important;
+}
+.leaflet-control-layers-base {
+  padding: 4px 8px !important;
+}
 </style>
 </head>
 <body>
@@ -467,13 +504,14 @@ header {
     </button>
 
     <div id="calculating-indicator">⏳ Calculando ruta óptima...</div>
-    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.1.0</span></span></div>
+    <div id="credits">Contacto: Jorge Guzman - 3834 602667 | <span class="version">Versión: <span id="version-display">v1.1.2</span></span></div>
     
     <div id="empty-state">
       <div style="font-size:36px;">🗺️</div>
       <p>Cargá tu archivo con las Órdenes de Trabajo o Lecturas.<br>Los puntos se mostrarán en el mapa con numeración.</p>
       <p style="font-size:11px; margin-top:6px;">Podés elegir entre perfil vehicular o peatonal, y fijar un punto de partida en el mapa.</p>
       <p style="font-size:11px; margin-top:4px; color: var(--accent);">📍 Tu ubicación se muestra con un punto azul con pulso.</p>
+      <p style="font-size:11px; margin-top:4px; color: var(--text-muted);">🛰️ Usá el control de capas (arriba a la derecha) para cambiar a vista satelital.</p>
     </div>
   </div>
 </div>
@@ -530,7 +568,7 @@ if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
       });
       self.addEventListener('fetch', e => {
         const url = new URL(e.request.url);
-        if (url.hostname === 'tile.openstreetmap.org') {
+        if (url.hostname === 'tile.openstreetmap.org' || url.hostname === 'server.arcgisonline.com') {
           e.respondWith(
             caches.match(e.request).then(cached => {
               const fetchPromise = fetch(e.request).then(response => {
@@ -556,10 +594,36 @@ if ('serviceWorker' in navigator && window.location.protocol !== 'file:') {
 
 // ========== INICIALIZACIÓN ==========
 document.addEventListener("DOMContentLoaded", () => {
+  // Crear mapa
   map = L.map('map', { zoomControl: false, center: [-28.4689, -65.7792], zoom: 15, preferCanvas: true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { updateWhenIdle: true, keepBuffer: 3 })
-    .on('tileload', () => document.getElementById('map-spinner').style.display = 'none')
-    .addTo(map);
+  
+  // ========== CAPAS DEL MAPA ==========
+  // Capa por defecto: OpenStreetMap
+  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 19,
+    attribution: '&copy; OpenStreetMap'
+  });
+  
+  // Capa satelital: Esri World Imagery (gratuita y de buena calidad)
+  const satelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 19,
+    attribution: '&copy; Esri'
+  });
+  
+  // Agregar la capa OSM por defecto
+  osmLayer.addTo(map);
+  
+  // Control de capas (selector)
+  const baseLayers = {
+    "🗺️ Calle": osmLayer,
+    "🛰️ Satélite": satelliteLayer
+  };
+  L.control.layers(baseLayers, null, { position: 'topright' }).addTo(map);
+  
+  // Ocultar spinner cuando los tiles estén cargados
+  osmLayer.on('tileload', () => document.getElementById('map-spinner').style.display = 'none');
+  satelliteLayer.on('tileload', () => document.getElementById('map-spinner').style.display = 'none');
+  
   markersGroup = L.layerGroup().addTo(map);
   
   document.getElementById('profile-select').addEventListener('change', (e) => {
@@ -611,12 +675,13 @@ function initGPS() {
     pos => {
       userLatLng = [pos.coords.latitude, pos.coords.longitude];
       
-      // Crear o actualizar el marcador de ubicación
+      // Crear o actualizar el marcador de ubicación (con estilo de pulso)
       if (!userMarker) {
         const icon = L.divIcon({
           className: 'user-location-marker',
-          iconSize: [18, 18],
-          iconAnchor: [9, 9]
+          html: '<div class="pulse-ring"></div><div class="pulse-dot"></div>',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
         });
         userMarker = L.marker(userLatLng, { icon: icon, zIndexOffset: 1000 }).addTo(map);
         gpsReady = true;
@@ -625,7 +690,7 @@ function initGPS() {
         if (!gpsReady) gpsReady = true;
       }
       
-      // ✅ Solo reordenar automáticamente si no es modo lectura con >50
+      // Solo reordenar automáticamente si no es modo lectura con >50
       const deberiaOrdenar = tasks.length > 0 && !origenPersonalizado && !(modoLectura && tasks.length > 50);
       if (deberiaOrdenar) {
         if (!lastReorderLatLng) {
